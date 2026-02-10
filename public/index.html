@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🐉 Roblox Studio Hub</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🐉 Roblox Studio Hub</h1>
+      <div class="status" id="hubStatus">
+        <span class="dot offline"></span>
+        <span>连接中...</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="studios-section">
+        <h2>在线 Studio</h2>
+        <div class="studios-list" id="studiosList">
+          <div class="empty-state">暂无连接</div>
+        </div>
+      </section>
+
+      <section class="execute-section">
+        <h2>执行代码</h2>
+        <div class="execute-form">
+          <div class="form-row">
+            <label>模式:</label>
+            <div class="mode-buttons" id="executeMode">
+              <button type="button" class="mode-btn active" data-mode="eval">Eval</button>
+              <button type="button" class="mode-btn" data-mode="run">Run</button>
+              <button type="button" class="mode-btn" data-mode="play">Play</button>
+            </div>
+          </div>
+          <div class="form-row code-row">
+            <label for="codeInput">Lua 代码:</label>
+            <textarea id="codeInput" rows="6" placeholder="print('Hello from Hub!')"></textarea>
+          </div>
+          <div class="form-actions">
+            <button id="executeBtn" class="btn-primary">执行 ▶</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="result-section">
+        <h2>执行结果</h2>
+        <div class="result-box" id="resultBox">等待执行...</div>
+      </section>
+
+      <!-- 隐藏的系统日志区域 -->
+      <section class="logs-section">
+        <h2>系统日志</h2>
+        <div class="logs-controls">
+          <label>
+            <input type="checkbox" id="autoScroll" checked> 自动滚动
+          </label>
+          <button id="clearLogs" class="btn-secondary">清空</button>
+        </div>
+        <div class="logs-box" id="logsBox"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

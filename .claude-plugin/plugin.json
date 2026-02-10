@@ -1,0 +1,11 @@
+{
+  "name": "roblox-studio-hub",
+  "version": "1.0.0",
+  "description": "Claude Code plugin for Roblox Studio Hub - manage multiple Studio instances and execute Lua code remotely",
+  "author": {
+    "name": "White Dragon Tools"
+  },
+  "repository": "https://github.com/white-dragon-tools/roblox-studio-hub",
+  "license": "MIT",
+  "keywords": ["roblox", "studio", "lua", "game-development", "remote-execution"]
+}
