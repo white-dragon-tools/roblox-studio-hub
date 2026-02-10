@@ -13,6 +13,17 @@
 - **HTTP 长轮询** - 稳定可靠的通信机制，无需 WebSocket
 - **自动重连** - Studio 插件支持断线自动重连
 
+
+## 🤖 AI READY
+
+本项目提供 `claude code` 兼容技能
+
+- **安装** - `npx skills add white-dragon-tools/roblox-studio-hub`
+- **初始化 (ask ai)** - ` install studio hub`
+  - 注意, 初始化将:
+  - 1. 设置 hub 为服务
+  - 2. 安装 studio plugin
+
 ## 🏗️ 架构概览
 
 ```

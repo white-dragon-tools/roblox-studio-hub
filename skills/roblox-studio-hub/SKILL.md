@@ -43,6 +43,8 @@ Roblox Studio Hub provides:
 
 ### 1. Install Hub Server
 
+必须保证当前运行在 `管理员` 权限中, 否则提醒用户并中断本次会话.
+
 ```bash
 # Configure GitHub npm registry
 npm config set @white-dragon-tools:registry https://npm.pkg.github.com
