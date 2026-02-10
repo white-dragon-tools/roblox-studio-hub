@@ -1,6 +1,6 @@
 {
   "name": "roblox-studio-hub",
-  "version": "1.0.0",
+  "version": "0.1.2",
   "description": "Claude Code plugin for Roblox Studio Hub - manage multiple Studio instances and execute Lua code remotely",
   "author": {
     "name": "White Dragon Tools"

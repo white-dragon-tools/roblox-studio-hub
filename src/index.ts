@@ -7,7 +7,11 @@ import { isInstalledAsService, isServiceRunning } from './utils/serviceStatus.js
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.STUDIO_HUB_PORT || '35888', 10);
-const VERSION = '1.0.0';
+
+// 从 package.json 读取版本号
+const packageJsonPath = path.join(__dirname, '..', 'package.json');
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+const VERSION = packageJson.version;
 
 const command = process.argv[2];
 
@@ -17,6 +21,9 @@ switch (command) {
     break;
   case 'status':
     showStatus();
+    break;
+  case 'exec':
+    execCommand();
     break;
   case 'install':
   case 'uninstall':
@@ -38,22 +45,29 @@ Roblox Studio Hub v${VERSION}
 用法: roblox-studio-hub <command>
 
 命令:
-  serve          启动服务器（前台运行）
-  status         查看服务状态
-  install        注册为系统服务（开机自启）
-  uninstall      卸载系统服务
-  start          启动系统服务
-  stop           停止系统服务
-  install-plugin 安装 Roblox Studio 插件
+  serve                        启动服务器（前台运行）
+  status                       查看服务状态
+  exec <studioId> <file> [-m]  执行 Lua 脚本
+  install                      注册为系统服务（开机自启）
+  uninstall                    卸载系统服务
+  start                        启动系统服务
+  stop                         停止系统服务
+  install-plugin               安装 Roblox Studio 插件
+
+exec 参数:
+  studioId    目标 Studio ID（如 place:123456 或 local:MyGame）
+  file        Lua 脚本文件路径
+  -m, --mode  执行模式: eval（默认）、run、play
 
 环境变量:
   STUDIO_HUB_PORT  服务端口（默认: 35888）
 
 示例:
-  roblox-studio-hub serve              # 前台运行
-  roblox-studio-hub install            # 注册为服务
-  roblox-studio-hub install-plugin     # 安装 Studio 插件
-  STUDIO_HUB_PORT=8080 roblox-studio-hub serve
+  roblox-studio-hub serve                          # 前台运行
+  roblox-studio-hub exec place:123 script.lua     # 执行脚本
+  roblox-studio-hub exec local:MyGame test.lua -m run
+  roblox-studio-hub install                        # 注册为服务
+  roblox-studio-hub install-plugin                 # 安装 Studio 插件
 `);
 }
 
@@ -193,6 +207,110 @@ function installPlugin(): void {
 `);
   } catch (err) {
     console.error('❌ 插件安装失败:', (err as Error).message);
+    process.exit(1);
+  }
+}
+
+async function execCommand(): Promise<void> {
+  const studioId = process.argv[3];
+  const filePath = process.argv[4];
+  
+  // 解析 mode 参数
+  let mode: 'eval' | 'run' | 'play' = 'eval';
+  const modeIndex = process.argv.indexOf('-m');
+  const modeIndexLong = process.argv.indexOf('--mode');
+  const modeArgIndex = modeIndex !== -1 ? modeIndex : modeIndexLong;
+  if (modeArgIndex !== -1 && process.argv[modeArgIndex + 1]) {
+    const modeArg = process.argv[modeArgIndex + 1];
+    if (modeArg === 'eval' || modeArg === 'run' || modeArg === 'play') {
+      mode = modeArg;
+    } else {
+      console.error(`❌ 无效的执行模式: ${modeArg}`);
+      console.error('   有效模式: eval, run, play');
+      process.exit(1);
+    }
+  }
+
+  if (!studioId) {
+    console.error('❌ 缺少 studioId 参数');
+    console.error('   用法: roblox-studio-hub exec <studioId> <file> [-m mode]');
+    process.exit(1);
+  }
+
+  if (!filePath) {
+    console.error('❌ 缺少文件路径参数');
+    console.error('   用法: roblox-studio-hub exec <studioId> <file> [-m mode]');
+    process.exit(1);
+  }
+
+  // 解析文件路径
+  const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+  
+  if (!fs.existsSync(absolutePath)) {
+    console.error(`❌ 文件不存在: ${absolutePath}`);
+    process.exit(1);
+  }
+
+  // 读取 Lua 代码
+  const code = fs.readFileSync(absolutePath, 'utf-8');
+
+  console.log(`📤 执行脚本: ${path.basename(absolutePath)}`);
+  console.log(`   目标: ${studioId}`);
+  console.log(`   模式: ${mode}`);
+  console.log('');
+
+  try {
+    const response = await fetch(`http://localhost:${PORT}/api/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studioId, code, mode }),
+    });
+
+    const result = await response.json() as {
+      success: boolean;
+      result?: unknown;
+      error?: string;
+      errors?: { server?: string; client?: string };
+      logs?: { server?: string[]; client?: string[] };
+    };
+
+    if (result.success) {
+      console.log('✅ 执行成功');
+      if (result.result !== undefined) {
+        console.log('');
+        console.log('返回值:');
+        console.log(JSON.stringify(result.result, null, 2));
+      }
+      if (result.logs?.server?.length) {
+        console.log('');
+        console.log('服务端日志:');
+        result.logs.server.forEach((log: string) => console.log(`  ${log}`));
+      }
+      if (result.logs?.client?.length) {
+        console.log('');
+        console.log('客户端日志:');
+        result.logs.client.forEach((log: string) => console.log(`  ${log}`));
+      }
+    } else {
+      console.error('❌ 执行失败');
+      if (result.error) {
+        console.error(`   ${result.error}`);
+      }
+      if (result.errors?.server) {
+        console.error('');
+        console.error('服务端错误:');
+        console.error(`  ${result.errors.server}`);
+      }
+      if (result.errors?.client) {
+        console.error('');
+        console.error('客户端错误:');
+        console.error(`  ${result.errors.client}`);
+      }
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error('❌ 请求失败:', (err as Error).message);
+    console.error('   请确保 Studio Hub 服务正在运行');
     process.exit(1);
   }
 }

@@ -1,16 +1,20 @@
 import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { studioManager } from '../hub/StudioManager.js';
 import { isInstalledAsService, isServiceRunning, isRunningAsService } from '../utils/serviceStatus.js';
 import type { ExecuteRequest, StudioListResponse, StudioInfo, LogEntry, StudioInstance } from '../types.js';
 
-const VERSION = '1.0.0';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// 从 package.json 读取版本号
+const packageJsonPath = path.join(__dirname, '..', '..', 'package.json');
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+const VERSION = packageJson.version;
 
 // 待执行的命令队列（studioId -> commands）
 interface PendingCommand {
