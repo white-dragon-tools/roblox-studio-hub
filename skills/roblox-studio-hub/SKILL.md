@@ -98,11 +98,30 @@ Roblox Studio Hub v1.0.0
 | `roblox-studio-hub` | Show help |
 | `roblox-studio-hub serve` | Run server in foreground |
 | `roblox-studio-hub status` | Check service status |
+| `roblox-studio-hub exec <studioId> <file> [-m mode]` | Execute Lua script file |
 | `roblox-studio-hub install` | Register as system service |
 | `roblox-studio-hub uninstall` | Uninstall system service |
 | `roblox-studio-hub start` | Start system service |
 | `roblox-studio-hub stop` | Stop system service |
 | `roblox-studio-hub install-plugin` | Install Roblox Studio plugin |
+
+### exec Command
+
+Execute Lua script directly from file:
+
+```bash
+# Basic usage
+roblox-studio-hub exec place:123456 script.lua
+
+# With mode
+roblox-studio-hub exec local:MyGame test.lua -m run
+roblox-studio-hub exec place:123456 test.lua --mode play
+```
+
+**Parameters:**
+- `studioId` - Target Studio ID (e.g., `place:123456` or `local:MyGame`)
+- `file` - Path to Lua script file
+- `-m, --mode` - Execution mode: `eval` (default), `run`, `play`
 
 ## API Reference
 

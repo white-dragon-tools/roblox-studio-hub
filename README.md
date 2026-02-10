@@ -110,7 +110,23 @@ roblox-studio-hub uninstall  # 卸载服务
 roblox-studio-hub serve      # 前台运行（调试用）
 ```
 
-3. **安装 Studio 插件**
+4. **执行 Lua 脚本**
+
+```bash
+# 基本用法
+roblox-studio-hub exec place:123456 script.lua
+
+# 指定执行模式
+roblox-studio-hub exec local:MyGame test.lua -m run
+roblox-studio-hub exec place:123456 test.lua --mode play
+```
+
+执行模式：
+- `eval` - 直接执行（默认）
+- `run` - 服务端测试模式
+- `play` - 完整 Play 模式
+
+5. **安装 Studio 插件**
 
 ```bash
 roblox-studio-hub install-plugin
