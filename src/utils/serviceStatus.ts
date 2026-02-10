@@ -1,10 +1,12 @@
 import { exec } from 'child_process';
 import { existsSync } from 'fs';
 import { promisify } from 'util';
+import http from 'http';
 
 const execAsync = promisify(exec);
 
-const SERVICE_NAME = 'robloxstudiohub';
+const SERVICE_NAME = 'robloxstudiohub.exe';
+const DEFAULT_PORT = parseInt(process.env.STUDIO_HUB_PORT || '35888', 10);
 
 /**
  * 检查是否已注册为系统服务
@@ -32,9 +34,9 @@ export async function isInstalledAsService(): Promise<boolean> {
 }
 
 /**
- * 检查服务是否正在运行
+ * 检查 Windows 服务是否正在运行
  */
-export async function isServiceRunning(): Promise<boolean> {
+export async function isWindowsServiceRunning(): Promise<boolean> {
   const platform = process.platform;
 
   try {
@@ -54,6 +56,37 @@ export async function isServiceRunning(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * 检查服务是否正在运行（通过 HTTP 请求检测）
+ */
+export async function isServiceRunning(port: number = DEFAULT_PORT): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        hostname: 'localhost',
+        port,
+        path: '/api/studios',
+        method: 'GET',
+        timeout: 2000,
+      },
+      (res) => {
+        resolve(res.statusCode === 200);
+      }
+    );
+
+    req.on('error', () => {
+      resolve(false);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(false);
+    });
+
+    req.end();
+  });
 }
 
 /**
