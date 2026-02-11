@@ -23,7 +23,11 @@ switch (command) {
     showStatus();
     break;
   case 'exec':
-    execCommand();
+    if (process.argv[3] === '-h' || process.argv[3] === '--help') {
+      showExecHelp();
+    } else {
+      execCommand();
+    }
     break;
   case 'install':
   case 'uninstall':
@@ -68,6 +72,79 @@ exec 参数:
   roblox-studio-hub exec local:MyGame test.lua -m run
   roblox-studio-hub install                        # 注册为服务
   roblox-studio-hub install-plugin                 # 安装 Studio 插件
+
+使用 "roblox-studio-hub exec -h" 查看 exec 命令详细帮助
+`);
+}
+
+function showExecHelp(): void {
+  console.log(`
+Roblox Studio Hub - exec 命令
+
+用法: roblox-studio-hub exec <studioId> <file> [options]
+
+描述:
+  向指定的 Roblox Studio 实例发送 Lua 脚本并执行
+
+参数:
+  studioId    目标 Studio 的唯一标识符
+  file        要执行的 Lua 脚本文件路径（支持相对路径和绝对路径）
+
+选项:
+  -m, --mode <mode>  执行模式（默认: eval）
+  -h, --help         显示此帮助信息
+
+Studio ID 格式:
+  place:<placeId>    云场景，使用 PlaceId 标识
+                     例: place:123456789
+  
+  local:<placeName>  本地文件，使用文件名标识
+                     例: local:MyGame.rbxl
+  
+  path:<localPath>   本地文件，使用自定义路径标识
+                     例: path:D:/Projects/MyGame
+                     需要在 Studio 中设置 workspace:SetAttribute("LocalPlacePath", "...")
+
+执行模式:
+  eval   直接执行模式（默认）
+         - 使用 loadstring 直接执行代码
+         - 适合简单脚本、快速测试
+         - 在当前 Studio 环境中执行
+  
+  run    服务端测试模式
+         - 通过 StudioTestService:ExecuteRunModeAsync 执行
+         - 启动服务端运行环境
+         - 适合测试服务端逻辑
+  
+  play   完整 Play 模式
+         - 通过 StudioTestService:ExecutePlayModeAsync 执行
+         - 启动完整的游戏测试（服务端 + 客户端）
+         - 适合端到端测试
+
+示例:
+  # 在云场景中执行脚本
+  roblox-studio-hub exec place:123456789 script.lua
+
+  # 在本地文件中执行脚本
+  roblox-studio-hub exec local:MyGame.rbxl test.lua
+
+  # 使用自定义路径标识
+  roblox-studio-hub exec path:D:/Projects/MyGame test.lua
+
+  # 使用 run 模式执行
+  roblox-studio-hub exec place:123456789 test.lua -m run
+
+  # 使用 play 模式执行
+  roblox-studio-hub exec local:MyGame.rbxl test.lua --mode play
+
+返回值:
+  脚本可以使用 return 语句返回值，支持以下类型:
+  - 基本类型: string, number, boolean, nil
+  - 表: 会被序列化为 JSON
+  - 不可序列化的值会被转换为字符串
+
+环境变量:
+  STUDIO_HUB_PORT  Hub 服务端口（默认: 35888）
 `);
 }
 
