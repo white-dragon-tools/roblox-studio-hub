@@ -102,31 +102,7 @@ roblox-studio-hub install
 roblox-studio-hub status
 ```
 
-其他服务管理命令：
-```bash
-roblox-studio-hub start      # 启动服务
-roblox-studio-hub stop       # 停止服务
-roblox-studio-hub uninstall  # 卸载服务
-roblox-studio-hub serve      # 前台运行（调试用）
-```
-
-4. **执行 Lua 脚本**
-
-```bash
-# 基本用法
-roblox-studio-hub exec place:123456 script.lua
-
-# 指定执行模式
-roblox-studio-hub exec local:MyGame test.lua -m run
-roblox-studio-hub exec place:123456 test.lua --mode play
-```
-
-执行模式：
-- `eval` - 直接执行（默认）
-- `run` - 服务端测试模式
-- `play` - 完整 Play 模式
-
-5. **安装 Studio 插件**
+3. **安装 Studio 插件**
 
 ```bash
 roblox-studio-hub install-plugin
@@ -141,7 +117,65 @@ roblox-studio-hub install-plugin
 1. 确保 Hub 服务正在运行（`roblox-studio-hub status`）
 2. 打开 Roblox Studio，插件会自动连接到 Hub
 3. 打开浏览器访问 `http://localhost:35888` 查看 Web UI
-4. 在 Web UI 中选择目标 Studio，输入 Lua 代码并执行
+4. 使用 CLI 命令或 Web UI 执行 Lua 代码
+
+## 📟 CLI 命令参考
+
+所有命令都支持 `-h` 或 `--help` 查看详细帮助。
+
+### 服务管理
+
+| 命令 | 说明 |
+|------|------|
+| `roblox-studio-hub serve` | 前台运行服务器（调试用） |
+| `roblox-studio-hub install` | 注册为系统服务（开机自启） |
+| `roblox-studio-hub uninstall` | 卸载系统服务 |
+| `roblox-studio-hub start` | 启动系统服务 |
+| `roblox-studio-hub stop` | 停止系统服务 |
+| `roblox-studio-hub status` | 查看服务状态 |
+| `roblox-studio-hub update` | 更新到最新版本（自动处理服务重启） |
+
+### Studio 管理
+
+| 命令 | 说明 |
+|------|------|
+| `roblox-studio-hub list` | 列出所有连接的 Studio |
+| `roblox-studio-hub info <studioId>` | 查看 Studio 详情 |
+| `roblox-studio-hub logs <studioId> [-n limit]` | 查看 Studio 日志 |
+
+### 代码执行
+
+```bash
+# 基本用法
+roblox-studio-hub exec <studioId> <file> [-m mode]
+
+# 示例
+roblox-studio-hub exec place:123456 script.lua
+roblox-studio-hub exec local:MyGame test.lua -m run
+roblox-studio-hub exec path:D:/Projects/MyGame test.lua --mode play
+```
+
+执行模式：
+- `eval` - 直接执行（默认），使用 loadstring
+- `run` - 服务端测试模式，通过 StudioTestService
+- `play` - 完整 Play 模式（服务端 + 客户端）
+
+### 插件管理
+
+```bash
+roblox-studio-hub install-plugin    # 安装 Studio 插件
+```
+
+### 更新 Hub
+
+```bash
+roblox-studio-hub update
+```
+
+更新命令会自动：
+1. 停止正在运行的服务
+2. 执行 npm update
+3. 重新启动服务
 
 ## 📡 API 参考
 
@@ -336,35 +370,11 @@ npm run dev
 npm run build
 npm publish
 
-# 4. 更新本地版本并启动服务
-npm update -g @white-dragon-tools/roblox-studio-hub
-roblox-studio-hub start
+# 4. 用户更新（使用 update 命令自动处理服务）
+roblox-studio-hub update
 
 # 5. 更新插件（如果插件有改动）
 roblox-studio-hub install-plugin
-```
-
-### 更新服务
-
-```bash
-# 停止服务
-roblox-studio-hub stop
-
-# 更新 npm 包
-npm update -g @white-dragon-tools/roblox-studio-hub
-
-# 启动服务
-roblox-studio-hub start
-
-# 更新插件（如果插件有改动）
-roblox-studio-hub install-plugin
-```
-
-如果服务配置有变化，需要重新安装服务：
-
-```bash
-roblox-studio-hub uninstall
-roblox-studio-hub install
 ```
 
 ## 📄 License

@@ -6,15 +6,14 @@ version: 1.0.0
 
 # Roblox Studio Hub
 
-A tool for managing multiple Roblox Studio instances and executing Lua code remotely via HTTP API.
+A tool for managing multiple Roblox Studio instances and executing Lua code remotely via CLI and HTTP API.
 
 ## Overview
 
 Roblox Studio Hub provides:
 - **Multi-Studio Management** - Connect and manage multiple Roblox Studio instances simultaneously
 - **Remote Code Execution** - Execute Lua code in Studio with three modes (eval, run, play)
-- **Real-time Monitoring** - Track Studio status and execution results via Web UI
-- **HTTP Long Polling** - Stable communication without WebSocket dependencies
+- **CLI Interface** - Full-featured command line interface for all operations
 - **System Service** - Run as background service with auto-start on boot
 
 ## Architecture
@@ -26,18 +25,10 @@ Roblox Studio Hub provides:
 └─────────────────┘                           └────────┬────────┘
                                                        │
                                               ┌────────▼────────┐
-                                              │    REST API     │
+                                              │    CLI / API    │
                                               │  localhost:35888│
                                               └─────────────────┘
 ```
-
-## Execution Modes
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| `eval` | Direct execution via `loadstring` | Quick scripts, simple tests |
-| `run` | Server-side test via `StudioTestService` | Server logic testing |
-| `play` | Full Play mode (server + client) | Complete game testing |
 
 ## Quick Start
 
@@ -71,77 +62,127 @@ roblox-studio-hub status
 roblox-studio-hub install-plugin
 ```
 
-Plugin will be installed to:
-- Windows: `%LOCALAPPDATA%\Roblox\Plugins\`
-- macOS: `~/Documents/Roblox/Plugins/`
-
 ### 4. Verify Setup
 
 ```bash
 roblox-studio-hub status
 ```
 
-Output:
-```
-Roblox Studio Hub v1.0.0
+## CLI Commands Reference
 
-  已注册为服务: ✅ 是
-  服务运行中:   ✅ 是
-  平台:         win32
-  端口:         35888
-```
+All commands support `-h` or `--help` for detailed help.
 
-## CLI Commands
+### Service Management
 
 | Command | Description |
 |---------|-------------|
-| `roblox-studio-hub` | Show help |
-| `roblox-studio-hub serve` | Run server in foreground |
-| `roblox-studio-hub status` | Check service status |
-| `roblox-studio-hub exec <studioId> <file> [-m mode]` | Execute Lua script file |
-| `roblox-studio-hub install` | Register as system service |
+| `roblox-studio-hub serve` | Run server in foreground (for debugging) |
+| `roblox-studio-hub install` | Register as system service (auto-start) |
 | `roblox-studio-hub uninstall` | Uninstall system service |
 | `roblox-studio-hub start` | Start system service |
 | `roblox-studio-hub stop` | Stop system service |
-| `roblox-studio-hub install-plugin` | Install Roblox Studio plugin |
+| `roblox-studio-hub status` | Check Hub service status |
+| `roblox-studio-hub update` | Update to latest version (auto-handles service restart) |
 
-### exec Command
+### Studio Management
 
-Execute Lua script directly from file:
+| Command | Description |
+|---------|-------------|
+| `roblox-studio-hub list` | List all connected Studios |
+| `roblox-studio-hub info <studioId>` | Show Studio details |
+| `roblox-studio-hub logs <studioId> [-n limit]` | View Studio logs |
+
+### Code Execution
 
 ```bash
 # Basic usage
-roblox-studio-hub exec place:123456 script.lua
+roblox-studio-hub exec <studioId> <file> [-m mode]
 
-# With mode
-roblox-studio-hub exec local:MyGame test.lua -m run
-roblox-studio-hub exec place:123456 test.lua --mode play
+# Examples
+roblox-studio-hub exec place:123456 script.lua           # Execute with eval mode
+roblox-studio-hub exec local:MyGame test.lua -m run      # Server-side test
+roblox-studio-hub exec path:D:/Projects/MyGame test.lua --mode play  # Full play mode
 ```
 
-**Parameters:**
-- `studioId` - Target Studio ID (e.g., `place:123456` or `local:MyGame`)
-- `file` - Path to Lua script file
-- `-m, --mode` - Execution mode: `eval` (default), `run`, `play`
+### Plugin Management
 
-## API Reference
+```bash
+roblox-studio-hub install-plugin    # Install Studio plugin
+```
+
+### Update Hub
+
+```bash
+roblox-studio-hub update
+```
+
+The update command automatically:
+1. Stops running service
+2. Executes npm update
+3. Restarts service
+
+## Execution Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `eval` | Direct execution via `loadstring` (default) | Quick scripts, simple tests |
+| `run` | Server-side test via `StudioTestService` | Server logic testing |
+| `play` | Full Play mode (server + client) | Complete game testing |
+
+## Studio ID Format
+
+- Cloud place: `place:{placeId}` (e.g., `place:123456`)
+- Local file: `local:{placeName}` (e.g., `local:MyGame`)
+- Custom path: `path:{localPath}` (e.g., `path:D:/Projects/MyGame`)
+
+## Common Workflows
+
+### Check Connected Studios
+
+```bash
+# List all connected Studios
+roblox-studio-hub list
+
+# Get details of a specific Studio
+roblox-studio-hub info place:123456
+```
+
+### Execute Lua Script
+
+```bash
+# Create a test script
+echo "print('Hello from Hub!'); return 42" > test.lua
+
+# Execute on a connected Studio
+roblox-studio-hub exec place:123456 test.lua
+```
+
+### View Studio Logs
+
+```bash
+# View last 100 logs (default)
+roblox-studio-hub logs place:123456
+
+# View last 50 logs
+roblox-studio-hub logs local:MyGame -n 50
+```
+
+### Update Hub to Latest Version
+
+```bash
+# Update with automatic service handling
+roblox-studio-hub update
+
+# Update plugin if needed
+roblox-studio-hub install-plugin
+```
+
+## API Reference (for programmatic access)
 
 ### Check Hub Status
 
 ```
 GET /api/status
-```
-
-Response:
-```json
-{
-  "version": "1.0.0",
-  "port": 35888,
-  "uptime": 3600,
-  "installedAsService": true,
-  "serviceRunning": true,
-  "runningAsService": true,
-  "platform": "win32"
-}
 ```
 
 ### List Connected Studios
@@ -150,87 +191,29 @@ Response:
 GET /api/studios
 ```
 
-Response:
-```json
-{
-  "studios": [
-    {
-      "id": "place:123456",
-      "type": "place",
-      "placeName": "My Game",
-      "connectedAt": "2024-01-01T00:00:00.000Z"
-    }
-  ]
-}
+### Get Studio Details
+
+```
+GET /api/studios/:id
+```
+
+### Get Studio Logs
+
+```
+GET /api/studios/:id/logs?limit=100
 ```
 
 ### Execute Code
 
 ```
 POST /api/execute
-```
+Content-Type: application/json
 
-Request body:
-```json
 {
   "studioId": "place:123456",
   "code": "print('Hello'); return 42",
   "mode": "eval",
   "timeout": 30
-}
-```
-
-Response:
-```json
-{
-  "success": true,
-  "result": 42,
-  "logs": { "server": ["Hello"] },
-  "errors": {}
-}
-```
-
-### Studio ID Format
-
-- Cloud place: `place:{placeId}` (e.g., `place:123456`)
-- Local file: `local:{placeName}` (e.g., `local:MyGame`)
-
-## Common Workflows
-
-### Testing Lua Code
-
-1. Ensure Hub service is running (`roblox-studio-hub status`)
-2. Open Roblox Studio - plugin auto-connects
-3. Execute code via API or Web UI at `http://localhost:35888`
-
-### Debugging Connection Issues
-
-1. Check Studio plugin status in the widget
-2. Verify HTTP requests are enabled in Studio Settings
-3. Check firewall settings for port 35888
-4. Review service status: `roblox-studio-hub status`
-
-### Running Server Tests
-
-Use `run` mode for server-side testing:
-
-```json
-{
-  "studioId": "place:123456",
-  "code": "local Players = game:GetService('Players'); return #Players:GetPlayers()",
-  "mode": "run"
-}
-```
-
-### Full Play Mode Testing
-
-Use `play` mode for complete game testing with client:
-
-```json
-{
-  "studioId": "place:123456",
-  "code": "return { serverTime = workspace:GetServerTimeNow() }",
-  "mode": "play"
 }
 ```
 
@@ -242,20 +225,6 @@ Use `play` mode for complete game testing with client:
 |----------|---------|-------------|
 | `STUDIO_HUB_PORT` | `35888` | Server port |
 
-### Studio Plugin Settings
-
-Configure in the plugin widget:
-- **Port** - Hub server port (default: 35888)
-- **Debug Mode** - Enable verbose logging
-
-## Additional Resources
-
-### Reference Files
-
-For detailed API documentation and patterns:
-- **`references/api-reference.md`** - Complete API specification
-- **`references/lua-patterns.md`** - Common Lua code patterns for testing
-
 ## Troubleshooting
 
 | Issue | Solution |
@@ -265,3 +234,12 @@ For detailed API documentation and patterns:
 | Code execution fails | Check Lua syntax, review error in response |
 | Studio disconnects | Hub removes inactive Studios after 35s without heartbeat |
 | Service not starting | Run `roblox-studio-hub install` with admin/sudo privileges |
+| Update fails | Run with admin/sudo privileges |
+
+## Additional Resources
+
+### Reference Files
+
+For detailed API documentation and patterns:
+- **`references/api-reference.md`** - Complete API specification
+- **`references/lua-patterns.md`** - Common Lua code patterns for testing

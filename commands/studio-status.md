@@ -15,31 +15,30 @@ Check the status of the Studio Hub server and connected Roblox Studio instances.
 Verify the Hub server is running:
 
 ```bash
-curl -s http://localhost:35888/api/studios
+roblox-studio-hub status
 ```
 
-If connection refused, the server is not running. Inform the user:
-- Start with `npm run dev` (development) or `npm start` (production)
-- Default port is 35888
+If the service is not running, inform the user:
+- Install as service: `roblox-studio-hub install` (requires admin/sudo)
+- Or run manually: `roblox-studio-hub serve`
 
 ### 2. List Connected Studios
 
-Parse the response to show connected Studios:
+List all connected Studio instances:
 
-```json
-{
-  "studios": [
-    {
-      "id": "place:123456",
-      "type": "place",
-      "placeName": "My Game",
-      "connectedAt": "2024-01-01T00:00:00.000Z"
-    }
-  ]
-}
+```bash
+roblox-studio-hub list
 ```
 
-### 3. Report Status
+### 3. Get Studio Details (Optional)
+
+For detailed info about a specific Studio:
+
+```bash
+roblox-studio-hub info <studioId>
+```
+
+### 4. Report Status
 
 Format the status report for the user:
 
@@ -72,14 +71,17 @@ Format the status report for the user:
    Server: Not running
    
    To start:
-   cd <project-directory>
-   npm run dev
+   roblox-studio-hub start    # If installed as service
+   roblox-studio-hub serve    # Manual foreground mode
 ```
 
-## Additional Info
+## CLI Commands Reference
 
-For detailed Studio info, use:
+| Command | Description |
+|---------|-------------|
+| `roblox-studio-hub status` | Check Hub service status |
+| `roblox-studio-hub list` | List all connected Studios |
+| `roblox-studio-hub info <studioId>` | Show Studio details |
+| `roblox-studio-hub logs <studioId>` | View Studio logs |
 
-```bash
-curl http://localhost:35888/api/studios/{studioId}
-```
+All commands support `-h` for help.
