@@ -294,7 +294,24 @@ npm run rojo:build:plugin  # 构建 Studio 插件
 ### Studio ID 格式
 
 - 云场景: `place:{placeId}` (例: `place:123456`)
-- 本地文件: `local:{placeName}` (例: `local:MyGame`)
+- 本地文件（自定义路径）: `path:{localPath}` (例: `path:D:/Projects/MyGame`)
+- 本地文件（默认）: `local:{placeName}` (例: `local:MyGame`)
+
+### 本地模式识别（LocalPlacePath）
+
+在本地模式下（placeId 为 0），插件会尝试读取 `Workspace` 的 `LocalPlacePath` Attribute 作为唯一识别符。
+
+外部工具可以通过以下方式设置此属性来识别特定的 Studio 实例：
+
+```lua
+-- 设置 Workspace 的 LocalPlacePath 属性
+workspace:SetAttribute("LocalPlacePath", "D:/Projects/MyGame")
+```
+
+当 `LocalPlacePath` 存在时：
+- Studio ID 格式变为 `path:{localPath}`
+- 上报的 `studioInfo` 中会包含 `localPath` 字段
+- 可通过 `path:xxx` 格式的 ID 来定位该 Studio
 
 ## 📝 注意事项
 
@@ -305,6 +322,50 @@ npm run rojo:build:plugin  # 构建 Studio 插件
 3. **心跳超时** - Studio 超过 35 秒无心跳会被自动移除
 
 4. **Play 模式** - Play 模式会实际启动游戏测试，执行完成后自动停止
+
+## 开发流程
+
+```bash
+# 1. 停止服务
+roblox-studio-hub stop
+
+# 2. 启动开发模式
+npm run dev
+
+# 3. 测试完成后，构建并发布
+npm run build
+npm publish
+
+# 4. 更新本地版本并启动服务
+npm update -g @white-dragon-tools/roblox-studio-hub
+roblox-studio-hub start
+
+# 5. 更新插件（如果插件有改动）
+roblox-studio-hub install-plugin
+```
+
+### 更新服务
+
+```bash
+# 停止服务
+roblox-studio-hub stop
+
+# 更新 npm 包
+npm update -g @white-dragon-tools/roblox-studio-hub
+
+# 启动服务
+roblox-studio-hub start
+
+# 更新插件（如果插件有改动）
+roblox-studio-hub install-plugin
+```
+
+如果服务配置有变化，需要重新安装服务：
+
+```bash
+roblox-studio-hub uninstall
+roblox-studio-hub install
+```
 
 ## 📄 License
 

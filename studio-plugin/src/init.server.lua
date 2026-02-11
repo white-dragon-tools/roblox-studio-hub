@@ -172,6 +172,7 @@ local function getStudioInfo(): {[string]: any}
 	local placeName = game.Name
 	local creatorName = nil
 	local creatorType = nil
+	local localPath = nil
 	
 	if game.PlaceId > 0 then
 		-- 云场景：尝试获取真实的 Place 名称
@@ -188,6 +189,12 @@ local function getStudioInfo(): {[string]: any}
 				end
 			end
 		end)
+	else
+		-- 本地模式：尝试读取 Workspace 的 LocalPlacePath 属性作为唯一识别符
+		pcall(function()
+			local workspace = game:GetService("Workspace")
+			localPath = workspace:GetAttribute("LocalPlacePath")
+		end)
 	end
 	
 	return {
@@ -197,6 +204,7 @@ local function getStudioInfo(): {[string]: any}
 		creatorType = creatorType,
 		gameId = game.GameId,
 		userId = userId,
+		localPath = localPath,
 	}
 end
 

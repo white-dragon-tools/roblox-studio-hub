@@ -127,9 +127,14 @@ export function createHttpServer(port: number = 8080) {
     }
 
     // 生成 studioId
-    const studioId = studioInfo.placeId > 0 
-      ? `place:${studioInfo.placeId}` 
-      : `local:${studioInfo.placeName}`;
+    let studioId: string;
+    if (studioInfo.placeId > 0) {
+      studioId = `place:${studioInfo.placeId}`;
+    } else if (studioInfo.localPath) {
+      studioId = `path:${studioInfo.localPath}`;
+    } else {
+      studioId = `local:${studioInfo.placeName}`;
+    }
 
     // 检查是否有旧的轮询请求（同一个 Studio 的新请求会踢掉旧请求）
     const existingPoll = waitingPolls.get(studioId);
@@ -162,6 +167,7 @@ export function createHttpServer(port: number = 8080) {
             creatorType: studio.creatorType,
             placeId: studio.placeId,
             gameId: studio.gameId,
+            localPath: studio.localPath,
             connectedAt: studio.connectedAt.toISOString(),
             clientCount: 0
           }
@@ -385,6 +391,7 @@ export function createHttpServer(port: number = 8080) {
         creatorType: s.creatorType,
         placeId: s.placeId,
         gameId: s.gameId,
+        localPath: s.localPath,
         connectedAt: s.connectedAt.toISOString(),
         clientCount: 0
       }))

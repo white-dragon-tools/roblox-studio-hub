@@ -169,6 +169,9 @@ function renderStudios(studios) {
       }
       metaParts.push(`Place: ${s.placeId}`);
       metaInfo = metaParts.join(' | ');
+    } else if (s.localPath) {
+      // 本地模式且有 localPath
+      metaInfo = escapeHtml(s.localPath);
     }
     
     return `

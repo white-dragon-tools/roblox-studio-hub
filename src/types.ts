@@ -6,11 +6,12 @@ export interface StudioInfo {
   creatorType?: string;
   gameId: number;
   userId: number;
+  localPath?: string;            // 本地模式下的自定义路径标识符
 }
 
 // Studio 实例
 export interface StudioInstance {
-  id: string;                    // "place:123456" 或 "local:MyGame"
+  id: string;                    // "place:123456" 或 "local:MyGame" 或 "path:xxx"
   type: 'place' | 'local';
   placeId?: number;              // 云场景
   placeName: string;             // Place 名称 或 本地文件名
@@ -18,6 +19,7 @@ export interface StudioInstance {
   creatorType?: string;          // 创建者类型：User / Group
   gameId?: number;
   userId?: number;
+  localPath?: string;            // 本地模式下的自定义路径标识符
   connectedAt: Date;
   lastHeartbeat: number;         // 最后心跳时间戳
   logs: LogEntry[];              // 日志历史

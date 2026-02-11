@@ -73,16 +73,19 @@ exec 参数:
 
 async function showStatus(): Promise<void> {
   const installed = await isInstalledAsService();
-  const running = await isServiceRunning();
+  const httpRunning = await isServiceRunning();
 
   console.log(`
 Roblox Studio Hub v${VERSION}
 
   已注册为服务: ${installed ? '✅ 是' : '❌ 否'}
-  服务运行中:   ${running ? '✅ 是' : '❌ 否'}
+  服务运行中:   ${httpRunning ? '✅ 是' : '❌ 否'} (端口 ${PORT})
   平台:         ${process.platform}
-  端口:         ${PORT}
 `);
+
+  if (httpRunning && !installed) {
+    console.log('  ⚠️  检测到服务在运行，但未注册为系统服务（可能是手动启动的 serve 命令）\n');
+  }
 }
 
 async function getService(): Promise<any> {
@@ -104,6 +107,7 @@ async function getService(): Promise<any> {
     name: 'RobloxStudioHub',
     description: 'Roblox Studio Hub - WebSocket hub for managing multiple Roblox Studio instances',
     script: path.join(__dirname, 'index.js'),
+    scriptOptions: 'serve',
     env: [{ name: 'STUDIO_HUB_PORT', value: String(PORT) }]
   });
 }
@@ -111,42 +115,65 @@ async function getService(): Promise<any> {
 async function handleServiceCommand(cmd: string): Promise<void> {
   const svc = await getService();
 
-  switch (cmd) {
-    case 'install':
-      svc.on('install', () => {
-        console.log('✅ 服务已安装，正在启动...');
+  return new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      console.log('⚠️ 操作超时');
+      resolve();
+    }, 30000);
+
+    const done = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+
+    svc.on('error', (err: Error) => {
+      clearTimeout(timeout);
+      console.error('❌ 错误:', err.message);
+      reject(err);
+    });
+
+    switch (cmd) {
+      case 'install':
+        svc.on('install', () => {
+          console.log('✅ 服务已安装，正在启动...');
+          svc.start();
+        });
+        svc.on('alreadyinstalled', () => {
+          console.log('⚠️ 服务已存在');
+          done();
+        });
+        svc.on('start', () => {
+          console.log('✅ 服务已启动');
+          done();
+        });
+        svc.install();
+        break;
+
+      case 'uninstall':
+        svc.on('uninstall', () => {
+          console.log('✅ 服务已卸载');
+          done();
+        });
+        svc.uninstall();
+        break;
+
+      case 'start':
+        svc.on('start', () => {
+          console.log('✅ 服务已启动');
+          done();
+        });
         svc.start();
-      });
-      svc.on('alreadyinstalled', () => {
-        console.log('⚠️ 服务已存在');
-      });
-      svc.on('start', () => {
-        console.log('✅ 服务已启动');
-      });
-      svc.install();
-      break;
+        break;
 
-    case 'uninstall':
-      svc.on('uninstall', () => {
-        console.log('✅ 服务已卸载');
-      });
-      svc.uninstall();
-      break;
-
-    case 'start':
-      svc.on('start', () => {
-        console.log('✅ 服务已启动');
-      });
-      svc.start();
-      break;
-
-    case 'stop':
-      svc.on('stop', () => {
-        console.log('✅ 服务已停止');
-      });
-      svc.stop();
-      break;
-  }
+      case 'stop':
+        svc.on('stop', () => {
+          console.log('✅ 服务已停止');
+          done();
+        });
+        svc.stop();
+        break;
+    }
+  });
 }
 
 function getPluginsDir(): string {

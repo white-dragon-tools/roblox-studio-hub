@@ -10,6 +10,9 @@ export class StudioManager {
   
   // 通过 placeName 查找（本地文件）
   private placeNameIndex: Map<string, string> = new Map();
+  
+  // 通过 localPath 查找（本地文件，自定义路径）
+  private localPathIndex: Map<string, string> = new Map();
 
   /**
    * 生成 Studio ID
@@ -17,6 +20,10 @@ export class StudioManager {
   private generateId(info: StudioInfo): { id: string; type: 'place' | 'local' } {
     if (info.placeId > 0) {
       return { id: `place:${info.placeId}`, type: 'place' };
+    }
+    // 本地模式：优先使用 localPath 作为唯一识别符
+    if (info.localPath) {
+      return { id: `path:${info.localPath}`, type: 'local' };
     }
     return { id: `local:${info.placeName}`, type: 'local' };
   }
@@ -36,6 +43,7 @@ export class StudioManager {
       creatorType: info.creatorType,
       gameId: info.gameId > 0 ? info.gameId : undefined,
       userId: info.userId > 0 ? info.userId : undefined,
+      localPath: info.localPath,
       connectedAt: new Date(),
       lastHeartbeat: Date.now(),
       logs: [],
@@ -46,6 +54,8 @@ export class StudioManager {
     // 更新索引
     if (type === 'place' && info.placeId > 0) {
       this.placeIdIndex.set(info.placeId, id);
+    } else if (info.localPath) {
+      this.localPathIndex.set(info.localPath, id);
     } else {
       this.placeNameIndex.set(info.placeName, id);
     }
@@ -64,6 +74,8 @@ export class StudioManager {
     // 清理索引
     if (instance.type === 'place' && instance.placeId) {
       this.placeIdIndex.delete(instance.placeId);
+    } else if (instance.localPath) {
+      this.localPathIndex.delete(instance.localPath);
     } else {
       this.placeNameIndex.delete(instance.placeName);
     }
@@ -103,6 +115,14 @@ export class StudioManager {
    */
   getByPlaceName(placeName: string): StudioInstance | undefined {
     const id = this.placeNameIndex.get(placeName);
+    return id ? this.studios.get(id) : undefined;
+  }
+
+  /**
+   * 通过 localPath 获取 Studio（本地文件，自定义路径）
+   */
+  getByLocalPath(localPath: string): StudioInstance | undefined {
+    const id = this.localPathIndex.get(localPath);
     return id ? this.studios.get(id) : undefined;
   }
 
