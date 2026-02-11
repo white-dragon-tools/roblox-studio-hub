@@ -1,6 +1,6 @@
 # 🐉 Roblox Studio Hub
 
-一个用于管理多个 Roblox Studio 实例的 WebSocket Hub，支持远程代码执行和实时监控。
+一个用于管理多个 Roblox Studio 实例的脚本执行代理。
 
 ## ✨ 功能特性
 
