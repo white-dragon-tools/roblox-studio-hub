@@ -4,3 +4,6 @@ dist/
 *.rbxl.lock
 *.rbxlx
 .factory/
+.DS_STORE
+.gulp-metadata.json
+.local-hub/
