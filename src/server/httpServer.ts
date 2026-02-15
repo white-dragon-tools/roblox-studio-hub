@@ -261,28 +261,10 @@ export function createHttpServer(port: number = 8080) {
       return;
     }
 
-    // 等待新命令
+    // 短轮询模式：立即响应，Runtime 控制轮询间隔
+    // Roblox Studio HttpService 不支持长保持连接
     waitingPolls.set(studioId, res);
-
-    // 设置超时
-    const timer = setTimeout(() => {
-      if (waitingPolls.get(studioId) === res) {
-        waitingPolls.delete(studioId);
-        try {
-          res.json({ studioId, commands: [] });
-        } catch (e) {
-          // ignore
-        }
-      }
-    }, timeout * 1000);
-
-    // 请求关闭时清理
-    req.on("close", () => {
-      clearTimeout(timer);
-      if (waitingPolls.get(studioId) === res) {
-        waitingPolls.delete(studioId);
-      }
-    });
+    res.json({ studioId, commands: [] });
   });
 
   // Studio 返回执行结果
@@ -508,7 +490,8 @@ export function createHttpServer(port: number = 8080) {
     console.log(`   - POST /api/studio/result`);
   });
 
-  // 定期清理超时的 Studio（35秒无心跳）
+  // 定期清理超时的 Studio
+  // 超时阈值 = poll 超时(10s) + 完整周期缓冲(10s) + 余量(15s) = 35s
   setInterval(() => {
     const now = Date.now();
     const studios = studioManager.getAll();

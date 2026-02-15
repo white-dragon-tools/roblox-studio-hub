@@ -175,67 +175,76 @@ function Runtime:_getStudioInfo(): { [string]: any }
 end
 
 function Runtime:_pollLoop()
-	local POLL_TIMEOUT = 30
+	-- 短轮询模式：服务端立即响应，Runtime 控制间隔
+	local POLL_INTERVAL = 2
 
 	while self._pollEnabled do
-		local studioInfo = self:_getStudioInfo()
-		local bodyJson = HttpService:JSONEncode({
-			studioInfo = studioInfo,
-			timeout = POLL_TIMEOUT,
-		})
+		local ok, err = pcall(function()
+			local studioInfo = self:_getStudioInfo()
+			local bodyJson = HttpService:JSONEncode({
+				studioInfo = studioInfo,
+			})
 
-		local success, response = pcall(function()
-			return HttpService:PostAsync(
-				self._baseUrl .. "/api/studio/poll",
-				bodyJson,
-				Enum.HttpContentType.ApplicationJson
-			)
-		end)
-
-		if success then
-			if not self.isConnected then
-				self.isConnected = true
-				if self.onStatusChange then
-					self.onStatusChange("Connected", Color3.fromRGB(100, 255, 100))
-				end
-			end
-
-			local parseSuccess, data = pcall(function()
-				return HttpService:JSONDecode(response)
+			local success, response = pcall(function()
+				return HttpService:PostAsync(
+					self._baseUrl .. "/api/studio/poll",
+					bodyJson,
+					Enum.HttpContentType.ApplicationJson
+				)
 			end)
 
-			if parseSuccess and data then
-				if data.studioId then
-					self.studioId = data.studioId
-					if self.onConnected then
-						self.onConnected(data.studioId)
+			if success then
+				if not self.isConnected then
+					self.isConnected = true
+					if self.onStatusChange then
+						self.onStatusChange("Connected", Color3.fromRGB(100, 255, 100))
 					end
 				end
 
-				if data.commands then
-					for _, command in ipairs(data.commands) do
-						self:_dispatchCommand(command)
+				local parseSuccess, data = pcall(function()
+					return HttpService:JSONDecode(response)
+				end)
+
+				if parseSuccess and data then
+					if data.studioId then
+						self.studioId = data.studioId
+						if self.onConnected then
+							self.onConnected(data.studioId)
+						end
+					end
+
+					if data.commands then
+						for _, command in ipairs(data.commands) do
+							self:_dispatchCommand(command)
+						end
+					end
+				end
+			else
+				if self.isConnected then
+					self.isConnected = false
+					if self.onStatusChange then
+						self.onStatusChange("Disconnected", Color3.fromRGB(200, 200, 200))
+					end
+					if self.onDisconnected then
+						self.onDisconnected()
+					end
+				end
+
+				if self._pollEnabled then
+					if self.onStatusChange then
+						self.onStatusChange("Reconnecting...", Color3.fromRGB(255, 200, 0))
 					end
 				end
 			end
-		else
-			if self.isConnected then
-				self.isConnected = false
-				if self.onStatusChange then
-					self.onStatusChange("Disconnected", Color3.fromRGB(200, 200, 200))
-				end
-				if self.onDisconnected then
-					self.onDisconnected()
-				end
-			end
+		end)
 
-			-- Wait before retry
-			if self._pollEnabled then
-				if self.onStatusChange then
-					self.onStatusChange("Reconnecting...", Color3.fromRGB(255, 200, 0))
-				end
-				task.wait(2)
-			end
+		if not ok then
+			warn("[HubRuntime] Poll loop error:", err)
+		end
+
+		-- 短轮询间隔
+		if self._pollEnabled then
+			task.wait(POLL_INTERVAL)
 		end
 	end
 end
