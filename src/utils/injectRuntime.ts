@@ -2,86 +2,114 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { fileURLToPath } from "url";
+import { getPluginsDir } from "../hub/hubPaths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** 项目根目录 */
+const PROJECT_ROOT = path.join(__dirname, "..", "..");
+
+/** Runtime 的 Rojo 项目配置路径 */
+const RUNTIME_PROJECT = path.join(PROJECT_ROOT, "runtime", "default.project.json");
+
+/** Lune 注入脚本路径 */
+const INJECT_SCRIPT = path.join(PROJECT_ROOT, "scripts", "inject-runtime.luau");
+
 /**
- * 注入 Hub Runtime 到 .rbxl 文件
- * 使用 rojo-injectable build --merge 将 Runtime + plugins 注入到 ReplicatedStorage
+ * 构建单个插件为 .rbxm（如果有 default.project.json）
+ * @returns .rbxm 临时文件路径，或 null（无 Rojo 配置）
  */
-export async function injectRuntime(placePath: string): Promise<void> {
-  const runtimeSrcPath = path.join(__dirname, "..", "..", "runtime", "src");
-  const pluginsPath = path.join(
-    os.homedir(),
-    ".roblox-studio-hub",
-    "plugins",
+async function buildPluginRbxm(
+  pluginDir: string,
+  execFileSync: typeof import("child_process").execFileSync,
+): Promise<string | null> {
+  const projectJson = path.join(pluginDir, "default.project.json");
+  if (!fs.existsSync(projectJson)) return null;
+
+  const outputPath = path.join(
+    os.tmpdir(),
+    `hub-plugin-${path.basename(pluginDir)}-${Date.now()}.rbxm`,
   );
 
-  // Ensure plugins directory exists
-  fs.mkdirSync(pluginsPath, { recursive: true });
+  execFileSync("rojo", ["build", projectJson, "--output", outputPath], {
+    stdio: "pipe",
+  });
 
-  // Generate temporary project.json for Rojo
-  const projectJson = {
-    name: "StudioHubRuntime",
-    tree: {
-      $className: "DataModel",
-      ReplicatedStorage: {
-        $className: "ReplicatedStorage",
-        __HubRuntime__: {
-          $path: runtimeSrcPath,
-          plugins: {
-            $path: pluginsPath,
-          },
-        },
-      },
-    },
-  };
+  return outputPath;
+}
 
-  const tmpProjectJsonPath = path.join(
+/**
+ * 注入 Hub Runtime 到 .rbxl 文件
+ *
+ * 流程：
+ * 1. rojo build runtime/ → .rbxm
+ * 2. rojo build 每个 plugin/ → .rbxm（可选）
+ * 3. lune run inject-runtime.luau → 注入到 .rbxl
+ */
+export async function injectRuntime(placePath: string): Promise<void> {
+  const { execFileSync } = await import("child_process");
+
+  // 1. Build runtime .rbxm
+  const runtimeRbxm = path.join(
     os.tmpdir(),
-    `hub-runtime-${Date.now()}.project.json`,
+    `hub-runtime-${Date.now()}.rbxm`,
   );
 
   try {
-    fs.writeFileSync(tmpProjectJsonPath, JSON.stringify(projectJson, null, 2));
+    execFileSync("rojo", ["build", RUNTIME_PROJECT, "--output", runtimeRbxm], {
+      stdio: "pipe",
+    });
+  } catch (e) {
+    const stderr =
+      (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
+    throw new Error(`Runtime 编译失败: ${stderr}`);
+  }
 
-    // TODO: 发布 rojo-injectable 后改为 npm 包路径
-    const ROJO_INJECTABLE_BIN = path.join(
-      os.homedir(),
-      "workspace/yoyo999888/rojo-injectable/master-rojo-injectable/target/release/rojo",
-    );
+  // 2. Build plugin .rbxm files
+  const pluginsDir = getPluginsDir();
+  const pluginRbxms: string[] = [];
 
-    if (!fs.existsSync(ROJO_INJECTABLE_BIN)) {
-      throw new Error(
-        `rojo-injectable 二进制不存在: ${ROJO_INJECTABLE_BIN}\n请先编译: cargo build --release`,
-      );
+  if (fs.existsSync(pluginsDir)) {
+    const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const rbxm = await buildPluginRbxm(
+          path.join(pluginsDir, entry.name),
+          execFileSync,
+        );
+        if (rbxm) pluginRbxms.push(rbxm);
+      } catch (e) {
+        console.warn(
+          `[InjectRuntime] 插件 ${entry.name} 编译失败，跳过: ${(e as Error).message}`,
+        );
+      }
     }
+  }
 
-    const { execFileSync } = await import("child_process");
-    try {
-      execFileSync(
-        ROJO_INJECTABLE_BIN,
-        [
-          "build",
-          tmpProjectJsonPath,
-          "--merge",
-          placePath,
-          "--output",
-          placePath,
-        ],
-        { stdio: "pipe" },
-      );
-    } catch (e) {
-      const stderr =
-        (e as { stderr?: Buffer }).stderr?.toString() ||
-        (e as Error).message;
-      throw new Error(`注入失败: ${stderr}`);
-    }
+  // 3. Inject via lune
+  try {
+    const luneArgs = [
+      "run",
+      INJECT_SCRIPT,
+      placePath,
+      runtimeRbxm,
+      ...pluginRbxms,
+    ];
+
+    execFileSync("lune", luneArgs, { stdio: "pipe" });
+  } catch (e) {
+    const stderr =
+      (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
+    throw new Error(`注入失败: ${stderr}`);
   } finally {
-    try {
-      fs.unlinkSync(tmpProjectJsonPath);
-    } catch {
-      // ignore cleanup errors
+    // Cleanup temp files
+    for (const tmpFile of [runtimeRbxm, ...pluginRbxms]) {
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch {
+        // ignore
+      }
     }
   }
 }
