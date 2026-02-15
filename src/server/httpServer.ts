@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { studioManager } from '../hub/StudioManager.js';
 import { isInstalledAsService, isServiceRunning, isRunningAsService } from '../utils/serviceStatus.js';
-import type { ExecuteRequest, StudioListResponse, StudioInfo, LogEntry, StudioInstance } from '../types.js';
+import type { StudioListResponse, StudioInfo, StudioInstance } from '../types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,7 +20,7 @@ const VERSION = packageJson.version;
 interface PendingCommand {
   id: string;
   type: string;
-  payload: unknown;
+  params: unknown;
   createdAt: number;
 }
 const pendingCommands: Map<string, PendingCommand[]> = new Map();
@@ -55,7 +55,7 @@ function addUIEvent(type: string, data: unknown): void {
   while (uiEvents.length > MAX_UI_EVENTS) {
     uiEvents.shift();
   }
-  
+
   // 通知所有等待的 UI 轮询
   for (const res of waitingUIPolls) {
     try {
@@ -80,7 +80,7 @@ function sendCommandToStudio(studioId: string, command: PendingCommand): boolean
       waitingPolls.delete(studioId);
     }
   }
-  
+
   // 否则加入队列
   let queue = pendingCommands.get(studioId);
   if (!queue) {
@@ -91,33 +91,72 @@ function sendCommandToStudio(studioId: string, command: PendingCommand): boolean
   return true;
 }
 
+// 统一 ID 解析逻辑
+function resolveStudio(id: string): StudioInstance | undefined {
+  if (id.startsWith('place:')) return studioManager.getByPlaceId(parseInt(id.slice(6), 10));
+  if (id.startsWith('local:')) return studioManager.getByPlaceName(id.slice(6));
+  if (id.startsWith('path:')) return studioManager.getByLocalPath(id.slice(5));
+  const placeId = parseInt(id, 10);
+  if (!isNaN(placeId)) return studioManager.getByPlaceId(placeId);
+  return studioManager.getByPlaceName(id);
+}
+
+// 通用 Studio 调用函数
+function callStudio(
+  studioId: string,
+  method: string,
+  params: unknown,
+  timeout = 30
+): Promise<{ success: boolean; result?: unknown; logs?: unknown; runtimeLogs?: unknown; errors?: unknown; error?: string }> {
+  return new Promise((resolve) => {
+    const id = uuidv4();
+    const command: PendingCommand = {
+      id,
+      type: method,
+      params,
+      createdAt: Date.now()
+    };
+
+    // 设置超时
+    const timer = setTimeout(() => {
+      const pending = pendingResults.get(id);
+      if (pending) {
+        resolve({ success: false, error: 'Execution timeout', runtimeLogs: pending.runtimeLogs });
+        pendingResults.delete(id);
+      }
+    }, timeout * 1000);
+
+    // 注册等待结果
+    pendingResults.set(id, {
+      resolve: (result) => resolve(result as typeof resolve extends (r: infer R) => void ? R : never),
+      timer,
+      runtimeLogs: []
+    });
+
+    // 发送命令
+    sendCommandToStudio(studioId, command);
+  });
+}
+
 export function createHttpServer(port: number = 8080) {
   const app = express();
   const server = createServer(app);
 
   // 中间件
   app.use(express.json());
-  
+
   // 静态文件（Web UI）
   app.use(express.static(path.join(__dirname, '../../public')));
 
   // ==================== Studio API ====================
 
   // Studio 长轮询获取命令（同时作为注册/心跳）
-  app.get('/api/studio/poll', (req: Request, res: Response) => {
-    const studioInfoStr = req.query.studioInfo as string;
-    const timeout = parseInt(req.query.timeout as string, 10) || 30;
-    
-    if (!studioInfoStr) {
-      res.status(400).json({ error: 'studioInfo is required' });
-      return;
-    }
+  app.post('/api/studio/poll', (req: Request, res: Response) => {
+    const studioInfo = req.body.studioInfo as StudioInfo | undefined;
+    const timeout = (req.body.timeout as number) || 30;
 
-    let studioInfo: StudioInfo;
-    try {
-      studioInfo = JSON.parse(studioInfoStr);
-    } catch (e) {
-      res.status(400).json({ error: 'Invalid studioInfo JSON' });
+    if (!studioInfo) {
+      res.status(400).json({ error: 'studioInfo is required' });
       return;
     }
 
@@ -150,13 +189,13 @@ export function createHttpServer(port: number = 8080) {
 
     // 注册或更新 Studio
     let studio: StudioInstance | undefined = studioManager.get(studioId);
-    
+
     if (!studio) {
       const newStudio = studioManager.register(studioInfo);
       if (newStudio) {
         studio = newStudio;
         console.log(`[HTTP] Studio registered via poll: ${studioId}`);
-        
+
         // 通知 UI
         addUIEvent('studio_connected', {
           studio: {
@@ -174,8 +213,8 @@ export function createHttpServer(port: number = 8080) {
         });
       }
     } else {
-      // 更新心跳
-      studioManager.heartbeat(studioId);
+      // 更新心跳（含 methods 更新）
+      studioManager.heartbeat(studioId, studioInfo);
     }
 
     // 检查是否有待处理的命令
@@ -213,7 +252,7 @@ export function createHttpServer(port: number = 8080) {
   // Studio 返回执行结果
   app.post('/api/studio/result', (req: Request, res: Response) => {
     const { id, payload } = req.body as { id: string; payload: unknown };
-    
+
     if (!id) {
       res.status(400).json({ error: 'id is required' });
       return;
@@ -254,19 +293,7 @@ export function createHttpServer(port: number = 8080) {
 
   // API: 获取单个 Studio 详情
   app.get('/api/studios/:id', (req: Request, res: Response) => {
-    const { id } = req.params;
-    
-    // 解析 ID: "place:123" 或 "local:name"
-    let studio;
-    if (id.startsWith('place:')) {
-      const placeId = parseInt(id.slice(6), 10);
-      studio = studioManager.getByPlaceId(placeId);
-    } else if (id.startsWith('local:')) {
-      const placeName = id.slice(6);
-      studio = studioManager.getByPlaceName(placeName);
-    } else {
-      studio = studioManager.get(id);
-    }
+    const studio = resolveStudio(req.params.id);
 
     if (!studio) {
       res.status(404).json({ error: 'Studio not found' });
@@ -285,58 +312,51 @@ export function createHttpServer(port: number = 8080) {
     });
   });
 
+  // API: 获取 Studio 可用方法
+  app.get('/api/studios/:id/methods', (req: Request, res: Response) => {
+    const studio = resolveStudio(req.params.id);
+    if (!studio) {
+      res.status(404).json({ error: 'Studio not found' });
+      return;
+    }
+    res.json({ methods: studio.methods });
+  });
+
   // API: 获取 Studio 日志
   app.get('/api/studios/:id/logs', (req: Request, res: Response) => {
-    const { id } = req.params;
-    const limit = parseInt(req.query.limit as string, 10) || 100;
-
-    let studioId = id;
-    if (!id.includes(':')) {
-      const placeId = parseInt(id, 10);
-      if (!isNaN(placeId)) {
-        studioId = `place:${placeId}`;
-      } else {
-        studioId = `local:${id}`;
-      }
+    const studio = resolveStudio(req.params.id);
+    if (!studio) {
+      res.status(404).json({ error: 'Studio not found' });
+      return;
     }
 
-    const logs = studioManager.getLogs(studioId, limit);
+    const limit = parseInt(req.query.limit as string, 10) || 100;
+    const logs = studioManager.getLogs(studio.id, limit);
     res.json({ logs });
   });
 
-  // API: 执行代码
-  app.post('/api/execute', async (req: Request, res: Response) => {
-    const { studioId, code, mode = 'eval', timeout = 30 } = req.body as ExecuteRequest;
+  // API: 调用 Studio 方法（通用入口）
+  app.post('/api/studios/:id/call', async (req: Request, res: Response) => {
+    const { method, params, timeout = 30 } = req.body as { method: string; params: unknown; timeout?: number };
 
-    if (!studioId) {
-      res.status(400).json({ error: 'studioId is required' });
+    if (!method) {
+      res.status(400).json({ error: 'method is required' });
       return;
     }
 
-    if (!code) {
-      res.status(400).json({ error: 'code is required' });
-      return;
-    }
-
-    // 解析 studioId
-    let resolvedId = studioId;
-    if (!studioId.includes(':')) {
-      const placeId = parseInt(studioId, 10);
-      if (!isNaN(placeId)) {
-        resolvedId = `place:${placeId}`;
-      } else {
-        resolvedId = `local:${studioId}`;
-      }
-    }
-
-    const studio = studioManager.get(resolvedId);
+    const studio = resolveStudio(req.params.id);
     if (!studio) {
-      res.status(404).json({ error: `Studio not found: ${resolvedId}` });
+      res.status(404).json({ error: 'Studio not found' });
+      return;
+    }
+
+    if (!studio.methods.some(m => m.name === method)) {
+      res.status(400).json({ error: `Method not available: ${method}` });
       return;
     }
 
     try {
-      const result = await executeOnStudio(resolvedId, code, mode, timeout);
+      const result = await callStudio(studio.id, method, params, timeout);
       res.json(result);
     } catch (e) {
       res.status(500).json({ error: (e as Error).message });
@@ -402,7 +422,7 @@ export function createHttpServer(port: number = 8080) {
   app.get('/api/status', async (_req: Request, res: Response) => {
     const installed = await isInstalledAsService();
     const serviceRunning = await isServiceRunning();
-    
+
     res.json({
       version: VERSION,
       port,
@@ -419,9 +439,8 @@ export function createHttpServer(port: number = 8080) {
   server.listen(port, () => {
     console.log(`🐉 Roblox Studio Hub running at http://localhost:${port}`);
     console.log(`   Studio API:`);
-    console.log(`   - GET  /api/studio/poll?studioInfo=JSON`);
+    console.log(`   - POST /api/studio/poll`);
     console.log(`   - POST /api/studio/result`);
-    console.log(`   - POST /api/studio/log`);
   });
 
   // 定期清理超时的 Studio（35秒无心跳）
@@ -440,41 +459,4 @@ export function createHttpServer(port: number = 8080) {
   }, 10000);
 
   return server;
-}
-
-// 向 Studio 发送执行命令
-function executeOnStudio(
-  studioId: string,
-  code: string,
-  mode: 'eval' | 'run' | 'play' = 'eval',
-  timeout = 30
-): Promise<{ success: boolean; result?: unknown; logs?: unknown; runtimeLogs?: unknown; errors?: unknown; error?: string }> {
-  return new Promise((resolve) => {
-    const id = uuidv4();
-    const command: PendingCommand = {
-      id,
-      type: 'execute',
-      payload: { code, mode, timeout },
-      createdAt: Date.now()
-    };
-
-    // 设置超时
-    const timer = setTimeout(() => {
-      const pending = pendingResults.get(id);
-      if (pending) {
-        resolve({ success: false, error: 'Execution timeout', runtimeLogs: pending.runtimeLogs });
-        pendingResults.delete(id);
-      }
-    }, timeout * 1000);
-
-    // 注册等待结果
-    pendingResults.set(id, {
-      resolve: (result) => resolve(result as typeof resolve extends (r: infer R) => void ? R : never),
-      timer,
-      runtimeLogs: []
-    });
-
-    // 发送命令
-    sendCommandToStudio(studioId, command);
-  });
 }

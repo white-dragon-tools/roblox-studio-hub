@@ -1,31 +1,39 @@
-import type { StudioInstance, StudioInfo, LogEntry } from '../types.js';
+import type {
+  StudioInstance,
+  StudioInfo,
+  LogEntry,
+  MethodDescriptor,
+} from "../types.js";
 
 const MAX_LOGS = 500;
 
 export class StudioManager {
   private studios: Map<string, StudioInstance> = new Map();
-  
+
   // 通过 placeId 查找（云场景）
   private placeIdIndex: Map<number, string> = new Map();
-  
+
   // 通过 placeName 查找（本地文件）
   private placeNameIndex: Map<string, string> = new Map();
-  
+
   // 通过 localPath 查找（本地文件，自定义路径）
   private localPathIndex: Map<string, string> = new Map();
 
   /**
    * 生成 Studio ID
    */
-  private generateId(info: StudioInfo): { id: string; type: 'place' | 'local' } {
+  private generateId(info: StudioInfo): {
+    id: string;
+    type: "place" | "local";
+  } {
     if (info.placeId > 0) {
-      return { id: `place:${info.placeId}`, type: 'place' };
+      return { id: `place:${info.placeId}`, type: "place" };
     }
     // 本地模式：优先使用 localPath 作为唯一识别符
     if (info.localPath) {
-      return { id: `path:${info.localPath}`, type: 'local' };
+      return { id: `path:${info.localPath}`, type: "local" };
     }
-    return { id: `local:${info.placeName}`, type: 'local' };
+    return { id: `local:${info.placeName}`, type: "local" };
   }
 
   /**
@@ -33,7 +41,7 @@ export class StudioManager {
    */
   register(info: StudioInfo): StudioInstance | null {
     const { id, type } = this.generateId(info);
-    
+
     const instance: StudioInstance = {
       id,
       type,
@@ -47,12 +55,13 @@ export class StudioManager {
       connectedAt: new Date(),
       lastHeartbeat: Date.now(),
       logs: [],
+      methods: info.methods || [],
     };
 
     this.studios.set(id, instance);
-    
+
     // 更新索引
-    if (type === 'place' && info.placeId > 0) {
+    if (type === "place" && info.placeId > 0) {
       this.placeIdIndex.set(info.placeId, id);
     } else if (info.localPath) {
       this.localPathIndex.set(info.localPath, id);
@@ -70,16 +79,16 @@ export class StudioManager {
   unregisterById(id: string): StudioInstance | null {
     const instance = this.studios.get(id);
     if (!instance) return null;
-    
+
     // 清理索引
-    if (instance.type === 'place' && instance.placeId) {
+    if (instance.type === "place" && instance.placeId) {
       this.placeIdIndex.delete(instance.placeId);
     } else if (instance.localPath) {
       this.localPathIndex.delete(instance.localPath);
     } else {
       this.placeNameIndex.delete(instance.placeName);
     }
-    
+
     this.studios.delete(id);
     console.log(`[StudioManager] Unregistered: ${id}`);
     return instance;
@@ -88,10 +97,13 @@ export class StudioManager {
   /**
    * 更新心跳时间
    */
-  heartbeat(studioId: string): boolean {
+  heartbeat(studioId: string, info?: StudioInfo): boolean {
     const studio = this.studios.get(studioId);
     if (!studio) return false;
     studio.lastHeartbeat = Date.now();
+    if (info?.methods) {
+      studio.methods = info.methods;
+    }
     return true;
   }
 
@@ -139,7 +151,7 @@ export class StudioManager {
   addLog(studioId: string, log: LogEntry): void {
     const studio = this.studios.get(studioId);
     if (!studio) return;
-    
+
     studio.logs.push(log);
     if (studio.logs.length > MAX_LOGS) {
       studio.logs.shift();
