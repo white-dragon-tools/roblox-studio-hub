@@ -1,19 +1,32 @@
-import express, { Request, Response } from 'express';
-import { createServer } from 'http';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import { v4 as uuidv4 } from 'uuid';
-import { studioManager } from '../hub/StudioManager.js';
-import { isInstalledAsService, isServiceRunning, isRunningAsService } from '../utils/serviceStatus.js';
-import type { StudioListResponse, StudioInfo, StudioInstance } from '../types.js';
+import express, { Request, Response } from "express";
+import { createServer } from "http";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import { v4 as uuidv4 } from "uuid";
+import { studioManager } from "../hub/StudioManager.js";
+import {
+  isInstalledAsService,
+  isServiceRunning,
+  isRunningAsService,
+} from "../utils/serviceStatus.js";
+import type {
+  StudioListResponse,
+  StudioInfo,
+  StudioInstance,
+} from "../types.js";
+import {
+  resolveFileParams,
+  findToolDescriptor,
+} from "../utils/fileResolver.js";
+import { discoverPluginTools } from "../hub/pluginDiscovery.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 从 package.json 读取版本号
-const packageJsonPath = path.join(__dirname, '..', '..', 'package.json');
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+const packageJsonPath = path.join(__dirname, "..", "..", "package.json");
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
 const VERSION = packageJson.version;
 
 // 待执行的命令队列（studioId -> commands）
@@ -68,7 +81,10 @@ function addUIEvent(type: string, data: unknown): void {
 }
 
 // 向 Studio 发送命令
-function sendCommandToStudio(studioId: string, command: PendingCommand): boolean {
+function sendCommandToStudio(
+  studioId: string,
+  command: PendingCommand,
+): boolean {
   // 检查是否有等待的轮询请求
   const waitingRes = waitingPolls.get(studioId);
   if (waitingRes) {
@@ -93,9 +109,10 @@ function sendCommandToStudio(studioId: string, command: PendingCommand): boolean
 
 // 统一 ID 解析逻辑
 function resolveStudio(id: string): StudioInstance | undefined {
-  if (id.startsWith('place:')) return studioManager.getByPlaceId(parseInt(id.slice(6), 10));
-  if (id.startsWith('local:')) return studioManager.getByPlaceName(id.slice(6));
-  if (id.startsWith('path:')) return studioManager.getByLocalPath(id.slice(5));
+  if (id.startsWith("place:"))
+    return studioManager.getByPlaceId(parseInt(id.slice(6), 10));
+  if (id.startsWith("local:")) return studioManager.getByPlaceName(id.slice(6));
+  if (id.startsWith("path:")) return studioManager.getByLocalPath(id.slice(5));
   const placeId = parseInt(id, 10);
   if (!isNaN(placeId)) return studioManager.getByPlaceId(placeId);
   return studioManager.getByPlaceName(id);
@@ -106,31 +123,45 @@ function callStudio(
   studioId: string,
   method: string,
   params: unknown,
-  timeout = 30
-): Promise<{ success: boolean; result?: unknown; logs?: unknown; runtimeLogs?: unknown; errors?: unknown; error?: string }> {
+  timeout = 30,
+): Promise<{
+  success: boolean;
+  result?: unknown;
+  logs?: unknown;
+  runtimeLogs?: unknown;
+  errors?: unknown;
+  error?: string;
+}> {
   return new Promise((resolve) => {
     const id = uuidv4();
     const command: PendingCommand = {
       id,
       type: method,
       params,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
 
     // 设置超时
     const timer = setTimeout(() => {
       const pending = pendingResults.get(id);
       if (pending) {
-        resolve({ success: false, error: 'Execution timeout', runtimeLogs: pending.runtimeLogs });
+        resolve({
+          success: false,
+          error: "Execution timeout",
+          runtimeLogs: pending.runtimeLogs,
+        });
         pendingResults.delete(id);
       }
     }, timeout * 1000);
 
     // 注册等待结果
     pendingResults.set(id, {
-      resolve: (result) => resolve(result as typeof resolve extends (r: infer R) => void ? R : never),
+      resolve: (result) =>
+        resolve(
+          result as typeof resolve extends (r: infer R) => void ? R : never,
+        ),
       timer,
-      runtimeLogs: []
+      runtimeLogs: [],
     });
 
     // 发送命令
@@ -146,22 +177,22 @@ export function createHttpServer(port: number = 8080) {
   app.use(express.json());
 
   // 静态文件（Web UI）
-  app.use(express.static(path.join(__dirname, '../../public')));
+  app.use(express.static(path.join(__dirname, "../../public")));
 
   // ==================== Studio API ====================
 
   // Studio 长轮询获取命令（同时作为注册/心跳）
-  app.post('/api/studio/poll', (req: Request, res: Response) => {
+  app.post("/api/studio/poll", (req: Request, res: Response) => {
     const studioInfo = req.body.studioInfo as StudioInfo | undefined;
     const timeout = (req.body.timeout as number) || 30;
 
     if (!studioInfo) {
-      res.status(400).json({ error: 'studioInfo is required' });
+      res.status(400).json({ error: "studioInfo is required" });
       return;
     }
 
     if (!studioInfo.placeName) {
-      res.status(400).json({ error: 'placeName is required' });
+      res.status(400).json({ error: "placeName is required" });
       return;
     }
 
@@ -180,7 +211,12 @@ export function createHttpServer(port: number = 8080) {
     if (existingPoll && existingPoll !== res) {
       console.log(`[HTTP] New poll replacing old poll: ${studioId}`);
       try {
-        existingPoll.json({ studioId, commands: [{ type: 'disconnect', reason: 'Replaced by new connection' }] });
+        existingPoll.json({
+          studioId,
+          commands: [
+            { type: "disconnect", reason: "Replaced by new connection" },
+          ],
+        });
       } catch (e) {
         // ignore
       }
@@ -197,7 +233,7 @@ export function createHttpServer(port: number = 8080) {
         console.log(`[HTTP] Studio registered via poll: ${studioId}`);
 
         // 通知 UI
-        addUIEvent('studio_connected', {
+        addUIEvent("studio_connected", {
           studio: {
             id: studio.id,
             type: studio.type,
@@ -208,8 +244,8 @@ export function createHttpServer(port: number = 8080) {
             gameId: studio.gameId,
             localPath: studio.localPath,
             connectedAt: studio.connectedAt.toISOString(),
-            clientCount: 0
-          }
+            clientCount: 0,
+          },
         });
       }
     } else {
@@ -241,7 +277,7 @@ export function createHttpServer(port: number = 8080) {
     }, timeout * 1000);
 
     // 请求关闭时清理
-    req.on('close', () => {
+    req.on("close", () => {
       clearTimeout(timer);
       if (waitingPolls.get(studioId) === res) {
         waitingPolls.delete(studioId);
@@ -250,11 +286,11 @@ export function createHttpServer(port: number = 8080) {
   });
 
   // Studio 返回执行结果
-  app.post('/api/studio/result', (req: Request, res: Response) => {
+  app.post("/api/studio/result", (req: Request, res: Response) => {
     const { id, payload } = req.body as { id: string; payload: unknown };
 
     if (!id) {
-      res.status(400).json({ error: 'id is required' });
+      res.status(400).json({ error: "id is required" });
       return;
     }
 
@@ -262,8 +298,8 @@ export function createHttpServer(port: number = 8080) {
     if (pending) {
       clearTimeout(pending.timer);
       pending.resolve({
-        ...payload as object,
-        runtimeLogs: pending.runtimeLogs
+        ...(payload as object),
+        runtimeLogs: pending.runtimeLogs,
       });
       pendingResults.delete(id);
     }
@@ -271,32 +307,30 @@ export function createHttpServer(port: number = 8080) {
     res.json({ success: true });
   });
 
-
-
   // ==================== Client API ====================
 
   // API: 获取所有 Studio 列表
-  app.get('/api/studios', (_req: Request, res: Response) => {
+  app.get("/api/studios", (_req: Request, res: Response) => {
     const studios = studioManager.getAll();
     const response: StudioListResponse = {
-      studios: studios.map(s => ({
+      studios: studios.map((s) => ({
         id: s.id,
         type: s.type,
         placeId: s.placeId,
         placeName: s.placeName,
         connectedAt: s.connectedAt.toISOString(),
-        clientCount: 0
-      }))
+        clientCount: 0,
+      })),
     };
     res.json(response);
   });
 
   // API: 获取单个 Studio 详情
-  app.get('/api/studios/:id', (req: Request, res: Response) => {
+  app.get("/api/studios/:id", (req: Request, res: Response) => {
     const studio = resolveStudio(req.params.id);
 
     if (!studio) {
-      res.status(404).json({ error: 'Studio not found' });
+      res.status(404).json({ error: "Studio not found" });
       return;
     }
 
@@ -308,25 +342,25 @@ export function createHttpServer(port: number = 8080) {
       gameId: studio.gameId,
       userId: studio.userId,
       connectedAt: studio.connectedAt.toISOString(),
-      clientCount: 0
+      clientCount: 0,
     });
   });
 
   // API: 获取 Studio 可用方法
-  app.get('/api/studios/:id/methods', (req: Request, res: Response) => {
+  app.get("/api/studios/:id/methods", (req: Request, res: Response) => {
     const studio = resolveStudio(req.params.id);
     if (!studio) {
-      res.status(404).json({ error: 'Studio not found' });
+      res.status(404).json({ error: "Studio not found" });
       return;
     }
     res.json({ methods: studio.methods });
   });
 
   // API: 获取 Studio 日志
-  app.get('/api/studios/:id/logs', (req: Request, res: Response) => {
+  app.get("/api/studios/:id/logs", (req: Request, res: Response) => {
     const studio = resolveStudio(req.params.id);
     if (!studio) {
-      res.status(404).json({ error: 'Studio not found' });
+      res.status(404).json({ error: "Studio not found" });
       return;
     }
 
@@ -336,27 +370,58 @@ export function createHttpServer(port: number = 8080) {
   });
 
   // API: 调用 Studio 方法（通用入口）
-  app.post('/api/studios/:id/call', async (req: Request, res: Response) => {
-    const { method, params, timeout = 30 } = req.body as { method: string; params: unknown; timeout?: number };
+  // 自动解析 x-file 标记的 file:// URI 参数
+  const pluginTools = discoverPluginTools();
+
+  app.post("/api/studios/:id/call", async (req: Request, res: Response) => {
+    const {
+      method,
+      params,
+      timeout = 30,
+    } = req.body as { method: string; params: unknown; timeout?: number };
 
     if (!method) {
-      res.status(400).json({ error: 'method is required' });
+      res.status(400).json({ error: "method is required" });
       return;
     }
 
     const studio = resolveStudio(req.params.id);
     if (!studio) {
-      res.status(404).json({ error: 'Studio not found' });
+      res.status(404).json({ error: "Studio not found" });
       return;
     }
 
-    if (!studio.methods.some(m => m.name === method)) {
+    if (!studio.methods.some((m) => m.name === method)) {
       res.status(400).json({ error: `Method not available: ${method}` });
       return;
     }
 
+    // x-file 参数解析：替换 file:// URI 为文件内容
+    let resolvedParams = params;
+    if (params && typeof params === "object") {
+      const tool = findToolDescriptor(pluginTools, method);
+      if (tool) {
+        try {
+          resolvedParams = resolveFileParams(
+            params as Record<string, unknown>,
+            tool,
+          );
+        } catch (e) {
+          res
+            .status(400)
+            .json({ error: `文件参数解析失败: ${(e as Error).message}` });
+          return;
+        }
+      }
+    }
+
     try {
-      const result = await callStudio(studio.id, method, params, timeout);
+      const result = await callStudio(
+        studio.id,
+        method,
+        resolvedParams,
+        timeout,
+      );
       res.json(result);
     } catch (e) {
       res.status(500).json({ error: (e as Error).message });
@@ -366,12 +431,12 @@ export function createHttpServer(port: number = 8080) {
   // ==================== UI API ====================
 
   // UI 长轮询获取更新
-  app.get('/api/ui/poll', (req: Request, res: Response) => {
+  app.get("/api/ui/poll", (req: Request, res: Response) => {
     const since = parseInt(req.query.since as string, 10) || 0;
     const timeout = parseInt(req.query.timeout as string, 10) || 30;
 
     // 检查是否有新事件
-    const newEvents = uiEvents.filter(e => e.timestamp > since);
+    const newEvents = uiEvents.filter((e) => e.timestamp > since);
     if (newEvents.length > 0) {
       res.json({ events: newEvents });
       return;
@@ -393,17 +458,17 @@ export function createHttpServer(port: number = 8080) {
     }, timeout * 1000);
 
     // 请求关闭时清理
-    req.on('close', () => {
+    req.on("close", () => {
       clearTimeout(timer);
       waitingUIPolls.delete(res);
     });
   });
 
   // UI 初始化数据
-  app.get('/api/ui/init', (_req: Request, res: Response) => {
+  app.get("/api/ui/init", (_req: Request, res: Response) => {
     const studios = studioManager.getAll();
     res.json({
-      studios: studios.map(s => ({
+      studios: studios.map((s) => ({
         id: s.id,
         type: s.type,
         placeName: s.placeName,
@@ -413,13 +478,13 @@ export function createHttpServer(port: number = 8080) {
         gameId: s.gameId,
         localPath: s.localPath,
         connectedAt: s.connectedAt.toISOString(),
-        clientCount: 0
-      }))
+        clientCount: 0,
+      })),
     });
   });
 
   // API: 获取 Hub 状态
-  app.get('/api/status', async (_req: Request, res: Response) => {
+  app.get("/api/status", async (_req: Request, res: Response) => {
     const installed = await isInstalledAsService();
     const serviceRunning = await isServiceRunning();
 
@@ -431,7 +496,7 @@ export function createHttpServer(port: number = 8080) {
       serviceRunning,
       runningAsService: isRunningAsService(),
       platform: process.platform,
-      nodeVersion: process.version
+      nodeVersion: process.version,
     });
   });
 
@@ -453,7 +518,7 @@ export function createHttpServer(port: number = 8080) {
         studioManager.unregisterById(studio.id);
         pendingCommands.delete(studio.id);
         waitingPolls.delete(studio.id);
-        addUIEvent('studio_disconnected', { studioId: studio.id });
+        addUIEvent("studio_disconnected", { studioId: studio.id });
       }
     }
   }, 10000);

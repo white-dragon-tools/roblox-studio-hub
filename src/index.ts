@@ -1,13 +1,28 @@
 #!/usr/bin/env node
 import path from "path";
 import fs from "fs";
-import os from "os";
 import { fileURLToPath } from "url";
 import { createHttpServer } from "./server/httpServer.js";
 import {
   isInstalledAsService,
   isServiceRunning,
 } from "./utils/serviceStatus.js";
+import { injectRuntime } from "./utils/injectRuntime.js";
+import { runCommand, showRunHelp } from "./commands/run.js";
+import {
+  pluginInstall,
+  pluginUninstall,
+  pluginList,
+  pluginSearch,
+  pluginUpdate,
+  showPluginHelp,
+} from "./commands/plugin.js";
+import {
+  marketplaceAdd,
+  marketplaceRemove,
+  marketplaceList,
+  showMarketplaceHelp,
+} from "./commands/marketplace.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.STUDIO_HUB_PORT || "35888", 10);
@@ -96,6 +111,32 @@ switch (command) {
       openStudio();
     }
     break;
+  case "run":
+    if (process.argv[3] === "-h" || process.argv[3] === "--help") {
+      showRunHelp();
+    } else {
+      const runPlaceArg = process.argv[3];
+      const runMethod = process.argv[4];
+      const runParamsJson = process.argv[5];
+      if (!runPlaceArg || !runMethod) {
+        console.error(
+          "❌ 用法: roblox-studio-hub run <place.rbxl> <method> [paramsJSON]",
+        );
+        process.exit(1);
+      }
+      runCommand({
+        placeArg: runPlaceArg,
+        method: runMethod,
+        paramsJson: runParamsJson,
+      });
+    }
+    break;
+  case "plugin":
+    handlePluginCommand();
+    break;
+  case "marketplace":
+    handleMarketplaceCommand();
+    break;
   default:
     showHelp();
 }
@@ -109,11 +150,14 @@ Roblox Studio Hub v${VERSION}
 命令:
   serve                        启动服务器（前台运行）
   open <place.rbxl>            注入 Runtime 并打开 Studio
+  run <place.rbxl> <method>    一次性模式：打开→调用→输出→退出
   status                       查看 Hub 服务状态
   list                         列出所有连接的 Studio
   info <studioId>              查看 Studio 详情
   logs <studioId> [-n limit]   查看 Studio 日志
   exec <studioId> ...          执行 Lua 代码
+  plugin <subcmd>              管理 Hub 插件（install/uninstall/list/search/update）
+  marketplace <subcmd>         管理插件市场（add/remove/list）
   install                      注册为系统服务（开机自启）
   uninstall                    卸载系统服务
   start                        启动系统服务
@@ -720,73 +764,10 @@ async function openStudio(): Promise<void> {
     process.exit(1);
   }
 
-  const runtimeSrcPath = path.join(__dirname, "..", "runtime", "src");
-  const pluginsPath = path.join(os.homedir(), ".roblox-studio-hub", "plugins");
-
-  // Ensure plugins directory exists
-  fs.mkdirSync(pluginsPath, { recursive: true });
-
-  // Generate temporary project.json
-  const projectJson = {
-    name: "StudioHubRuntime",
-    tree: {
-      $className: "DataModel",
-      ReplicatedStorage: {
-        $className: "ReplicatedStorage",
-        __HubRuntime__: {
-          $path: runtimeSrcPath,
-          plugins: {
-            $path: pluginsPath,
-          },
-        },
-      },
-    },
-  };
-
-  const tmpDir = os.tmpdir();
-  const tmpProjectJsonPath = path.join(
-    tmpDir,
-    `hub-runtime-${Date.now()}.project.json`,
-  );
-
   try {
-    fs.writeFileSync(tmpProjectJsonPath, JSON.stringify(projectJson, null, 2));
-
-    // Step 1: Inject runtime via rojo-injectable build --merge
+    // Step 1: Inject runtime
     console.log(`📦 注入 Runtime 到: ${placePath}`);
-
-    // TODO: 发布 rojo-injectable 后改为 npm 包路径
-    const ROJO_INJECTABLE_BIN = path.join(
-      os.homedir(),
-      "workspace/yoyo999888/rojo-injectable/master-rojo-injectable/target/release/rojo",
-    );
-
-    if (!fs.existsSync(ROJO_INJECTABLE_BIN)) {
-      console.error(`❌ rojo-injectable 二进制不存在: ${ROJO_INJECTABLE_BIN}`);
-      console.error("   请先编译: cargo build --release");
-      process.exit(1);
-    }
-
-    const { execFileSync } = await import("child_process");
-    try {
-      execFileSync(
-        ROJO_INJECTABLE_BIN,
-        [
-          "build",
-          tmpProjectJsonPath,
-          "--merge",
-          placePath,
-          "--output",
-          placePath,
-        ],
-        { stdio: "pipe" },
-      );
-    } catch (e) {
-      const stderr =
-        (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
-      console.error(`❌ 注入失败: ${stderr}`);
-      process.exit(1);
-    }
+    await injectRuntime(placePath);
     console.log("✅ Runtime 注入成功");
 
     // Step 2: Open in Roblox Studio via physical-operation
@@ -802,12 +783,6 @@ async function openStudio(): Promise<void> {
   } catch (err) {
     console.error("❌ 操作失败:", (err as Error).message);
     process.exit(1);
-  } finally {
-    try {
-      fs.unlinkSync(tmpProjectJsonPath);
-    } catch {
-      // ignore
-    }
   }
 }
 
@@ -1059,5 +1034,93 @@ function formatDuration(ms: number): string {
     return `${minutes} 分钟`;
   } else {
     return `${seconds} 秒`;
+  }
+}
+
+// ==================== Plugin & Marketplace Commands ====================
+
+function handlePluginCommand(): void {
+  const subcmd = process.argv[3];
+
+  if (!subcmd || subcmd === "-h" || subcmd === "--help") {
+    showPluginHelp();
+    return;
+  }
+
+  switch (subcmd) {
+    case "install": {
+      const target = process.argv[4];
+      if (!target) {
+        console.error(
+          "❌ 用法: roblox-studio-hub plugin install <name|owner/repo>",
+        );
+        process.exit(1);
+      }
+      pluginInstall(target);
+      break;
+    }
+    case "uninstall": {
+      const name = process.argv[4];
+      if (!name) {
+        console.error("❌ 用法: roblox-studio-hub plugin uninstall <name>");
+        process.exit(1);
+      }
+      pluginUninstall(name);
+      break;
+    }
+    case "list":
+      pluginList();
+      break;
+    case "search":
+      pluginSearch(process.argv[4]);
+      break;
+    case "update":
+      pluginUpdate(process.argv[4]);
+      break;
+    default:
+      console.error(`❌ 未知子命令: plugin ${subcmd}`);
+      showPluginHelp();
+      process.exit(1);
+  }
+}
+
+function handleMarketplaceCommand(): void {
+  const subcmd = process.argv[3];
+
+  if (!subcmd || subcmd === "-h" || subcmd === "--help") {
+    showMarketplaceHelp();
+    return;
+  }
+
+  switch (subcmd) {
+    case "add": {
+      const repo = process.argv[4];
+      if (!repo) {
+        console.error(
+          "❌ 用法: roblox-studio-hub marketplace add <owner/repo>",
+        );
+        process.exit(1);
+      }
+      marketplaceAdd(repo);
+      break;
+    }
+    case "remove": {
+      const repo = process.argv[4];
+      if (!repo) {
+        console.error(
+          "❌ 用法: roblox-studio-hub marketplace remove <owner/repo>",
+        );
+        process.exit(1);
+      }
+      marketplaceRemove(repo);
+      break;
+    }
+    case "list":
+      marketplaceList();
+      break;
+    default:
+      console.error(`❌ 未知子命令: marketplace ${subcmd}`);
+      showMarketplaceHelp();
+      process.exit(1);
   }
 }
