@@ -1,7 +1,7 @@
 --[[
 	test-gamestate.luau
 
-	Tests: Runtime detects gameState changes (edit → play → edit)
+	Tests: Plugin detects gameState changes (edit -> play -> edit)
 	and sends `state` messages to Hub via WebSocket.
 
 	Usage: lune run packages/mock-studio/test-scenarios/test-gamestate <port>
@@ -96,33 +96,37 @@ Runtime:registerHandler({
 	return { success = true, context = "both" }
 end)
 
--- ======== Run ========
+Runtime:loadPlugins()
 
--- Track gameState changes reported by Runtime
+-- ======== Run (Plugin role) ========
+local MockPlugin = require("../lib/mock-plugin")
+local mockPlugin = MockPlugin.create(game, Runtime, port)
+
+-- Track gameState changes
 local stateChanges: { string } = {}
-Runtime.onGameStateChange = function(state: string)
+mockPlugin.onGameStateChange = function(state: string)
 	table.insert(stateChanges, state)
-	print("[test-gamestate] Runtime reported state change: " .. state)
+	print("[test-gamestate] Plugin reported state change: " .. state)
 end
 
 -- Connect (starts in edit mode)
-Runtime:connect(port)
+mockPlugin:connect()
 
 for i = 1, 50 do
 	task.wait(0.1)
-	if Runtime.isConnected then break end
+	if mockPlugin.isConnected then break end
 end
 
-if not Runtime.isConnected then
+if not mockPlugin.isConnected then
 	print("FAIL: Not connected")
 	process.exit(1)
 end
 
-print("[test-gamestate] Connected in edit mode, gameState: " .. Runtime.gameState)
+print("[test-gamestate] Connected in edit mode, gameState: " .. mockPlugin.gameState)
 
 -- Verify initial state
-if Runtime.gameState ~= "edit" then
-	print("FAIL: Expected initial gameState='edit', got: " .. Runtime.gameState)
+if mockPlugin.gameState ~= "edit" then
+	print("FAIL: Expected initial gameState='edit', got: " .. mockPlugin.gameState)
 	process.exit(1)
 end
 
@@ -130,14 +134,14 @@ end
 print("[test-gamestate] Simulating Play (F5)...")
 controller:setGameState("play")
 
--- Wait for _monitorGameState to detect the change (polls every 1s)
+-- Wait for monitorGameState to detect the change (polls every 1s)
 task.wait(2)
 
-if Runtime.gameState ~= "play" then
-	print("FAIL: Expected gameState='play' after F5, got: " .. Runtime.gameState)
+if mockPlugin.gameState ~= "play" then
+	print("FAIL: Expected gameState='play' after F5, got: " .. mockPlugin.gameState)
 	process.exit(1)
 end
-print("[test-gamestate] gameState is now: " .. Runtime.gameState)
+print("[test-gamestate] gameState is now: " .. mockPlugin.gameState)
 
 -- Simulate Stop (Shift+F5): switch back to edit mode
 print("[test-gamestate] Simulating Stop (Shift+F5)...")
@@ -146,11 +150,11 @@ controller:setGameState("edit")
 -- Wait for detection
 task.wait(2)
 
-if Runtime.gameState ~= "edit" then
-	print("FAIL: Expected gameState='edit' after Stop, got: " .. Runtime.gameState)
+if mockPlugin.gameState ~= "edit" then
+	print("FAIL: Expected gameState='edit' after Stop, got: " .. mockPlugin.gameState)
 	process.exit(1)
 end
-print("[test-gamestate] gameState is now: " .. Runtime.gameState)
+print("[test-gamestate] gameState is now: " .. mockPlugin.gameState)
 
 -- Verify state changes were reported
 if #stateChanges < 2 then
@@ -168,7 +172,7 @@ if stateChanges[2] ~= "edit" then
 	process.exit(1)
 end
 
-Runtime:disconnect()
+mockPlugin:disconnect()
 
-print("PASS: GameState test passed (edit → play → edit)")
+print("PASS: GameState test passed (edit -> play -> edit)")
 process.exit(0)

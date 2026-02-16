@@ -1,7 +1,7 @@
 --[[
 	test-connect.luau
 
-	Tests: Runtime connects to Hub via WebSocket, sends hello, receives welcome.
+	Tests: Plugin connects to Hub via WebSocket, sends hello, receives welcome.
 
 	Usage: lune run packages/mock-studio/test-scenarios/test-connect <port>
 
@@ -12,7 +12,6 @@ local roblox = require("@lune/roblox")
 local fs = require("@lune/fs")
 local process = require("@lune/process")
 local task = require("@lune/task")
-local serde = require("@lune/serde")
 
 -- Parse args
 local port = tonumber(process.args[1])
@@ -34,7 +33,6 @@ local game, _controller = MockRoblox.create({
 
 -- ======== Load Runtime via loadstring ========
 
--- Read the runtime source
 local runtimeSrcPath = process.cwd .. "/packages/runtime/src/init.lua"
 if not fs.isFile(runtimeSrcPath) then
 	print("FAIL: Runtime source not found: " .. runtimeSrcPath)
@@ -43,25 +41,21 @@ end
 
 local runtimeSource = fs.readFile(runtimeSrcPath)
 
--- Create a mock 'script' object (ModuleScript) for the runtime
 local scriptInstance = roblox.Instance.new("ModuleScript")
 scriptInstance.Name = "__HubRuntime__"
 scriptInstance.Parent = game:GetService("ReplicatedStorage")
 
--- Load and execute with proper environment
 local chunk, loadErr = loadstring(runtimeSource, "runtime/init.lua")
 if not chunk then
 	print("FAIL: Could not parse runtime source: " .. tostring(loadErr))
 	process.exit(1)
 end
 
--- Mock Enum.WebStreamClientType (not available in Lune)
 local MockEnum = setmetatable({
 	WebStreamClientType = { WebSocket = "WebSocket" },
 	HttpContentType = { ApplicationJson = "application/json" },
 }, { __index = Enum })
 
--- Set up environment with game and script globals
 local env = setmetatable({
 	game = game,
 	script = scriptInstance,
@@ -101,25 +95,31 @@ Runtime:registerHandler({
 	return { success = true, result = params }
 end)
 
--- ======== Run Test ========
+-- Load plugins (in real Studio, Plugin calls this)
+Runtime:loadPlugins()
+
+-- ======== Run Test (Plugin role) ========
+
+local MockPlugin = require("../lib/mock-plugin")
+local mockPlugin = MockPlugin.create(game, Runtime, port)
 
 print("[test-connect] Connecting to port " .. port .. "...")
-Runtime:connect(port)
+mockPlugin:connect()
 
 -- Wait for connection
 for i = 1, 50 do
 	task.wait(0.1)
-	if Runtime.isConnected then break end
+	if mockPlugin.isConnected then break end
 end
 
-if not Runtime.isConnected then
+if not mockPlugin.isConnected then
 	print("FAIL: Timed out waiting for connection")
 	process.exit(1)
 end
 
-print("[test-connect] Connected! studioId: " .. tostring(Runtime.studioId))
+print("[test-connect] Connected! studioId: " .. tostring(mockPlugin.studioId))
 
-if not Runtime.studioId or Runtime.studioId == "" then
+if not mockPlugin.studioId or mockPlugin.studioId == "" then
 	print("FAIL: No studioId received")
 	process.exit(1)
 end
@@ -128,7 +128,7 @@ local methods = Runtime:getAvailableMethods()
 print("[test-connect] Methods: " .. #methods)
 
 -- Disconnect cleanly
-Runtime:disconnect()
+mockPlugin:disconnect()
 
 print("PASS: Connect test passed")
 process.exit(0)

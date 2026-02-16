@@ -1,7 +1,7 @@
 --[[
 	test-command.luau
 
-	Tests: Hub sends a command via WS, Runtime executes and returns result.
+	Tests: Hub sends a command via WS, Plugin dispatches to Runtime, returns result.
 
 	Usage: lune run packages/mock-studio/test-scenarios/test-command <port>
 ]]
@@ -77,24 +77,29 @@ Runtime:registerHandler({
 	return { success = true, result = params }
 end)
 
--- ======== Run ========
-Runtime:connect(port)
+Runtime:loadPlugins()
+
+-- ======== Run (Plugin role) ========
+local MockPlugin = require("../lib/mock-plugin")
+local mockPlugin = MockPlugin.create(game, Runtime, port)
+
+mockPlugin:connect()
 
 for i = 1, 50 do
 	task.wait(0.1)
-	if Runtime.isConnected then break end
+	if mockPlugin.isConnected then break end
 end
 
-if not Runtime.isConnected then
+if not mockPlugin.isConnected then
 	print("FAIL: Not connected")
 	process.exit(1)
 end
 
-print("[test-command] Connected, studioId: " .. tostring(Runtime.studioId))
+print("[test-command] Connected, studioId: " .. tostring(mockPlugin.studioId))
 print("[test-command] Waiting for commands...")
 task.wait(3)
 
-Runtime:disconnect()
+mockPlugin:disconnect()
 
 print("PASS: Command test passed")
 process.exit(0)
