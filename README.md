@@ -138,9 +138,7 @@ roblox-studio-hub serve
 
 ```
 🐉 Roblox Studio Hub running at http://localhost:35888
-   Studio API:
-   - POST /api/studio/poll (HTTP)
-   - WebSocket ws://localhost:35888
+   WebSocket ws://localhost:35888
 ```
 
 **终端 2** — 注入 Runtime 并打开 Studio：
@@ -267,9 +265,10 @@ roblox-studio-hub open MyGame.rbxl --port 35999
 
 ```
 ReplicatedStorage
-└── __HubRuntime__ (ModuleScript)
-    ├── builtins/         (内置插件: execute, get-studio-info)
-    └── plugins/          (已安装的用户插件)
+└── .roblox-studio-hub (ModuleScript)    ← Runtime 框架
+    └── plugins/ (Folder)                ← 已安装的插件
+        ├── execute
+        └── get-studio-info
 ```
 
 ### hub run
@@ -548,7 +547,9 @@ curl http://localhost:35888/api/studios/local:MyGame.rbxl/methods
   "methods": [
     {
       "name": "execute",
-      "description": "Execute Lua code in Roblox Studio...",
+      "description": "Execute Lua code in Roblox Studio. Auto-adapts: edit mode uses loadstring, play mode uses script injection.",
+      "context": "both",
+      "target": ["server", "client"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -556,25 +557,30 @@ curl http://localhost:35888/api/studios/local:MyGame.rbxl/methods
             "type": "string",
             "description": "Lua source code to execute",
             "x-file": true
-          },
-          "mode": {
-            "type": "string",
-            "enum": ["eval", "run", "play"],
-            "description": "Execution mode..."
-          },
-          "timeout": {
-            "type": "number",
-            "description": "Execution timeout in seconds",
-            "default": 30
           }
         },
         "required": ["code"]
-      },
-      "context": "edit"
+      }
+    },
+    {
+      "name": "startGame",
+      "description": "Start the game (like F5). Studio enters play state.",
+      "context": "edit",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["play", "run"],
+            "default": "play"
+          }
+        }
+      }
     },
     {
       "name": "getStudioInfo",
-      "description": "Get current Roblox Studio environment information...",
+      "description": "Get current Roblox Studio environment information.",
+      "context": "both",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -636,7 +642,7 @@ curl -X POST http://localhost:35888/api/studios/local:MyGame.rbxl/call \
 
 ```json
 {
-  "error": "Method \"execute\" requires context \"edit\", but studio is in \"play\" state"
+  "error": "Method \"startGame\" requires context \"edit\", but studio is in \"play\" state"
 }
 ```
 
@@ -781,15 +787,15 @@ Hub 的所有 Studio 能力都由插件提供。Runtime 本身是纯框架（零
 
 #### execute
 
-在 Studio 中执行 Lua 代码。根据当前状态自适应执行方式。
+在 Studio 中执行 Lua 代码。根据当前 gameState 自适应执行方式。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `code` | string | 是 | Lua 源码（支持 `x-file`） |
-| `target` | string | play 模式必填 | `server` / `client` |
-| `timeout` | number | 否 | 超时秒数（默认 30） |
 
 context: `both`，target: `["server", "client"]`
+
+`code` 是唯一的工具参数。`target` 是框架级参数，通过 CLI `--target`、HTTP `target` 字段、MCP `_target` 传递，不在工具 params 内。
 
 - **edit 模式**：通过 `loadstring()` 直接执行，无需 target
 - **play 模式**：通过脚本注入到指定环境，必须指定 target
@@ -1201,7 +1207,8 @@ my-roblox-game/
 │   ├── hub.json               # 项目级 Hub 配置
 │   └── plugins/
 │       ├── game-inspector/    # 项目专属插件
-│       │   ├── plugin.json
+│       │   ├── .roblox-studio-hub-plugin/
+│       │   │   └── plugin.json
 │       │   ├── default.project.json
 │       │   └── src/init.lua
 │       └── debug-tools/
@@ -1521,11 +1528,10 @@ roblox-studio-hub/
 │   │   │   ├── commands/             # CLI 命令实现
 │   │   │   ├── mcp/                  # MCP Server
 │   │   │   └── utils/                # 工具函数
-│   │   ├── public/                   # Web UI（调试用）
+│   │   ├── public/                   # Hub Web UI
 │   │   └── package.json
 │   ├── runtime/              # Lua Runtime 框架
 │   │   ├── src/init.lua              # 核心框架
-│   │   ├── src/builtins/             # 内置插件
 │   │   └── default.project.json      # Rojo 配置
 │   ├── studio-plugin/        # Studio UI Plugin
 │   │   ├── src/init.server.lua       # Plugin 源码
@@ -1588,13 +1594,15 @@ STUDIO_HUB_PORT=35999 roblox-studio-hub serve
 2. 重新注入 Runtime：`roblox-studio-hub open MyGame.rbxl`
 3. 检查 Studio 输出窗口的错误日志
 
-### Play 模式下方法不可用
+### Play 模式下执行代码
 
-Play 模式下 `loadstring()` 不可用，因此 execute 的 `eval` 模式无法工作。使用 `run` 或 `play` 模式替代：
+Play 模式下 execute 自动切换为脚本注入方式，需要指定 `--target`：
 
 ```bash
-roblox-studio-hub exec execute '{"code":"return 1+1","mode":"run"}'
+roblox-studio-hub exec execute '{"code":"return 1+1"}' --target server
 ```
+
+如果忘记指定 target，Hub 会返回错误提示。
 
 ### 方法返回 context 错误
 
