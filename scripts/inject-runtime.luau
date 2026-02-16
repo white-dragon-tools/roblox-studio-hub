@@ -65,6 +65,18 @@ if not replicatedStorage then
 	process.exit(1)
 end
 
+-- Set LocalPlacePath attribute on Workspace so Runtime can identify this place
+local workspace = nil
+for _, child in place:GetChildren() do
+	if child.ClassName == "Workspace" then
+		workspace = child
+		break
+	end
+end
+if workspace then
+	workspace:SetAttribute("LocalPlacePath", placePath)
+end
+
 -- Remove existing __HubRuntime__ if present
 for _, child in replicatedStorage:GetChildren() do
 	if child.Name == "__HubRuntime__" then
