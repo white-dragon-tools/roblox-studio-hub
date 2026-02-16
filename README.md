@@ -940,6 +940,7 @@ my-plugin/
       "description": "这个方法做什么",
       "context": "play",
       "target": ["server"],
+      "web": "/tools/my-method",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -981,6 +982,7 @@ my-plugin/
 |------|------|
 | `context` | 工具可用的状态：`"edit"` / `"play"` / `"both"`（默认 `"both"`） |
 | `target` | 工具支持的执行环境：`["server"]` / `["client"]` / `["server", "client"]`。仅 play 模式有效。省略表示不需要 target |
+| `web` | 工具自定义页面路径（相对于插件 web root），Hub Web UI 选中该工具时加载此页面 |
 | `inputSchema` 中 `"x-file": true` | 标记该参数支持 `file://` URI，Hub 自动读取文件内容替换 |
 
 #### default.project.json
@@ -1096,24 +1098,46 @@ end
 - ECS 可视化 — 实时展示 jecs 等 ECS 框架的实体/组件状态
 - 性能面板、场景树浏览器等调试工具
 
-**配置：** 在 plugin.json 中声明 `web` 字段：
+**配置：** 在 plugin.json 中声明插件级 `web` 字段（web root 目录），在 `tools[]` 中声明工具级 `web` 字段（页面路径）：
 
 ```json
 {
-  "name": "ui-bridge",
+  "name": "jecs-inspector",
   "version": "0.1.0",
   "web": "./web/dist",
-  "tools": [...]
+  "tools": [
+    {
+      "name": "inspectEntities",
+      "description": "查看所有 ECS 实体",
+      "web": "/tools/entities",
+      "inputSchema": { ... }
+    },
+    {
+      "name": "inspectSystems",
+      "description": "查看所有 ECS 系统",
+      "web": "/tools/systems",
+      "inputSchema": { ... }
+    },
+    {
+      "name": "queryComponents",
+      "description": "查询组件数据",
+      "inputSchema": { ... }
+    }
+  ]
 }
 ```
 
-Hub 自动在 `/plugins/<name>/` 路径下 serve 该目录的内容：
+两层 `web` 字段的关系：
 
-```
-GET /plugins/ui-bridge/          → ui-bridge 的 Web 页面
-GET /plugins/jecs-inspector/     → jecs-inspector 的可视化面板
-POST /api/studios/:id/call       → API（同源，零 CORS 配置）
-```
+| 字段 | 位置 | 含义 |
+|------|------|------|
+| `plugin.web` | plugin.json 顶层 | 插件的 web root 目录，Hub 在 `/plugins/<name>/` 下 serve |
+| `tools[].web` | tools[] 内 | 工具的自定义页面路径（相对于 web root），Hub Web UI 选中该工具时加载 |
+
+上例中：
+- `inspectEntities` → Hub Web UI 加载 `/plugins/jecs-inspector/tools/entities`
+- `inspectSystems` → Hub Web UI 加载 `/plugins/jecs-inspector/tools/systems`
+- `queryComponents` → 无 `web` 字段，只显示自动生成的表单
 
 **Web 页面调用 Hub API：**
 
@@ -1122,7 +1146,7 @@ POST /api/studios/:id/call       → API（同源，零 CORS 配置）
 const res = await fetch("/api/studios/local:MyGame.rbxl/call", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ method: "getShopItems" }),
+  body: JSON.stringify({ method: "inspectEntities" }),
 });
 const data = await res.json();
 ```
@@ -1132,7 +1156,7 @@ const data = await res.json();
 生产环境下 Hub 直接 serve `web/dist/` 静态文件。开发时，Hub 检测到插件 `web/` 目录含 `package.json`，自动启动 dev server（端口随机），将 `/plugins/<name>/*` 反代过去：
 
 ```
-浏览器 → localhost:35888/plugins/ui-bridge/
+浏览器 → localhost:35888/plugins/jecs-inspector/tools/entities
              ↓
 Hub 判断 dev mode？
   ├─ yes → 反代到 localhost:随机端口（Vite / 其他 dev server）
@@ -1398,6 +1422,78 @@ Studio Plugin 启动
   │
   └─ 断开连接: Hub 自动清理 Studio 注册
 ```
+
+---
+
+## Web UI
+
+Hub 内置 Web 界面，访问 `http://localhost:35888` 即可使用。
+
+### 布局
+
+```
+┌─────────────────────────────────────────────────────┐
+│  🐉 Roblox Studio Hub                    ● 已连接   │
+├──────────────┬──────────────────────────────────────┤
+│              │  工具: [execute ▾] [getStudioInfo]    │
+│  Studio 列表  │                                      │
+│              │  ┌─ 提交表单（自动生成）──────────────┐ │
+│  ┌──────────┐│  │  code: [________________] 📁     │ │
+│  │ MyGame   ││  │  timeout: [30        ]           │ │
+│  │ 📁 edit  ││  │  target: [server ▾]  ← play 模式 │ │
+│  └──────────┘│  │              [执行 ▶]            │ │
+│              │  └──────────────────────────────────┘ │
+│  ┌──────────┐│                                      │
+│  │ OtherGame││  ┌─ 执行结果 ────────────────────────┐│
+│  │ ☁️ play  ││  │ ✅ 返回值: 2                     ││
+│  └──────────┘│  └──────────────────────────────────┘│
+│              │                                      │
+│              │  ┌─ 工具自定义页面（可选）────────────┐│
+│              │  │ （加载插件 web 页面）              ││
+│              │  └──────────────────────────────────┘│
+└──────────────┴──────────────────────────────────────┘
+```
+
+- **左侧**：Studio 列表，卡片显示 place 名称、类型（本地/云）、gameState（edit/play）
+- **右侧上方**：工具选择器 + 自动生成的提交表单 + 执行结果
+- **右侧下方**：工具的自定义页面（如果工具声明了 `web` 字段）
+
+### 动态表单
+
+选中 Studio 后，Hub 从 `/api/studios/:id/methods` 获取可用工具列表。选中工具后，根据 `inputSchema`（JSON Schema）自动生成表单：
+
+| Schema 类型 | 表单控件 |
+|------------|---------|
+| `string` | 文本输入框 |
+| `string` + `enum` | 下拉选择 |
+| `string` + `x-file: true` | 文本输入框 + 文件选择按钮 |
+| `number` | 数字输入框 |
+| `boolean` | 复选框 |
+| `object` | JSON 编辑器 |
+
+**play 模式额外控件：**
+
+当 Studio 处于 play 状态且工具声明了 `target` 字段时，表单顶部显示 target 选择器（server / client）。
+
+### 工具自定义页面
+
+如果工具在 `plugin.json` 的 `tools[]` 中声明了 `web` 字段，Hub 在表单下方加载对应的插件页面（iframe）：
+
+```json
+{
+  "tools": [
+    {
+      "name": "inspectECS",
+      "web": "/tools/ecs",
+      "inputSchema": { ... }
+    }
+  ]
+}
+```
+
+Hub 加载 `/plugins/<pluginName>/tools/ecs` 到 iframe。自定义页面与 Hub 同源，可直接 fetch Hub API。
+
+没有 `web` 字段的工具只显示自动表单和结果，不显示自定义页面区域。
 
 ---
 
