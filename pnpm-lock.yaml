@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@white-dragon-tools/roblox-studio-physical-operation':
-        specifier: ^0.7.2
-        version: 0.7.2(zod@4.3.6)
+        specifier: ^0.7.3
+        version: 0.7.3(zod@4.3.6)
 
   packages/hub:
     dependencies:
@@ -668,8 +668,8 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
-  '@white-dragon-tools/roblox-studio-physical-operation@0.7.2':
-    resolution: {integrity: sha512-rxB/dWaGFx48vQiKJuY5l5a02iKdQ9z20JCdfVDX13tp6Yumw8l7OnNnD90RfOMNIXv5nu3hbb4CCz4ZEkr3eg==, tarball: https://npm.pkg.github.com/download/@white-dragon-tools/roblox-studio-physical-operation/0.7.2/72645912d2ba35e01db71bc8c6e48d1e8231f7c4}
+  '@white-dragon-tools/roblox-studio-physical-operation@0.7.3':
+    resolution: {integrity: sha512-JSV5/tkapjvelB1irRXRzbw1fR0ZRZOqmvreAcNU9WUEBslECN3r7kuUqqohumcM5ws00g+vx4WLdEGDMCqQ5g==, tarball: https://npm.pkg.github.com/download/@white-dragon-tools/roblox-studio-physical-operation/0.7.3/d7a529408ddc42cb254f3e433e6fb8d239d79251}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
@@ -2066,7 +2066,7 @@ snapshots:
       - supports-color
       - zod
 
-  '@white-dragon-tools/roblox-studio-physical-operation@0.7.2(zod@4.3.6)':
+  '@white-dragon-tools/roblox-studio-physical-operation@0.7.3(zod@4.3.6)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.26.0(zod@4.3.6)
       koffi: 2.15.1

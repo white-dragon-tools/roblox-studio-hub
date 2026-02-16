@@ -6,6 +6,6 @@
     "dev": "pnpm --filter ./packages/hub dev"
   },
   "dependencies": {
-    "@white-dragon-tools/roblox-studio-physical-operation": "^0.7.2"
+    "@white-dragon-tools/roblox-studio-physical-operation": "^0.7.3"
   }
 }
