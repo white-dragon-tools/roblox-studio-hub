@@ -4,14 +4,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HUB_ROOT = path.join(__dirname, "..", "..");
-const MONOREPO_ROOT = path.join(HUB_ROOT, "..", "..");
-const MOCK_STUDIO_DIR = path.join(MONOREPO_ROOT, "packages", "mock-studio");
+const MOCK_STUDIO_PKG = path.join(__dirname, "..");
+const MONOREPO_ROOT = path.join(MOCK_STUDIO_PKG, "..", "..");
 
 describe("Runtime Unit Tests (Lune)", () => {
   it("test-intercall: Runtime:call() inter-plugin communication", async () => {
     const scenarioPath = path.join(
-      MOCK_STUDIO_DIR,
+      MOCK_STUDIO_PKG,
       "test-scenarios",
       "test-intercall",
     );
@@ -45,7 +44,7 @@ describe("Runtime Unit Tests (Lune)", () => {
 
   it("test-plugin-deps: Plugin dependency topological sort", async () => {
     const scenarioPath = path.join(
-      MOCK_STUDIO_DIR,
+      MOCK_STUDIO_PKG,
       "test-scenarios",
       "test-plugin-deps",
     );
@@ -79,7 +78,7 @@ describe("Runtime Unit Tests (Lune)", () => {
 
   it("test-notify: Runtime notification API", async () => {
     const scenarioPath = path.join(
-      MOCK_STUDIO_DIR,
+      MOCK_STUDIO_PKG,
       "test-scenarios",
       "test-notify",
     );

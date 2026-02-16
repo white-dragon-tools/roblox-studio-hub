@@ -108,14 +108,13 @@ export async function runCommand(options: RunOptions): Promise<void> {
   try {
     // 4. 注入 Runtime
     console.error(`📦 注入 Runtime 到: ${path.basename(placePath)}`);
-    await injectRuntime(placePath);
+    await injectRuntime(placePath, { port: PORT });
     console.error("✅ Runtime 注入成功");
 
     // 5. 打开 Studio
     console.error("🚀 打开 Roblox Studio...");
-    const { openPlace } = await import(
-      "@white-dragon-tools/roblox-studio-physical-operation/studio-manager"
-    );
+    const { openPlace } =
+      await import("@white-dragon-tools/roblox-studio-physical-operation/studio-manager");
     const [openSuccess, openMessage] = await openPlace(placePath);
     if (!openSuccess) {
       console.error(`❌ 打开 Studio 失败: ${openMessage}`);

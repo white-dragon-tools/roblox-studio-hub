@@ -5,6 +5,7 @@ import { injectRuntime } from "../utils/injectRuntime.js";
 export interface OpenOptions {
   readonly placeArg: string;
   readonly pluginDirs: ReadonlyArray<string>;
+  readonly port?: number;
 }
 
 /**
@@ -13,6 +14,7 @@ export interface OpenOptions {
 export function parseOpenArgs(argv: ReadonlyArray<string>): OpenOptions {
   const pluginDirs: string[] = [];
   let placeArg = "";
+  let port: number | undefined;
 
   // argv[0]=node, argv[1]=script, argv[2]="open", rest starts at [3]
   let i = 3;
@@ -27,13 +29,34 @@ export function parseOpenArgs(argv: ReadonlyArray<string>): OpenOptions {
       pluginDirs.push(argv[i]);
     } else if (arg.startsWith("--plugin-dir=")) {
       pluginDirs.push(arg.slice("--plugin-dir=".length));
+    } else if (arg === "--port") {
+      i++;
+      if (i >= argv.length) {
+        console.error("❌ --port 需要指定端口号");
+        process.exit(1);
+      }
+      const parsed = parseInt(argv[i], 10);
+      if (Number.isNaN(parsed)) {
+        console.error(`❌ --port 值必须是数字，收到: ${argv[i]}`);
+        process.exit(1);
+      }
+      port = parsed;
+    } else if (arg.startsWith("--port=")) {
+      const parsed = parseInt(arg.slice("--port=".length), 10);
+      if (Number.isNaN(parsed)) {
+        console.error(
+          `❌ --port 值必须是数字，收到: ${arg.slice("--port=".length)}`,
+        );
+        process.exit(1);
+      }
+      port = parsed;
     } else if (!arg.startsWith("-")) {
       placeArg = arg;
     }
     i++;
   }
 
-  return { placeArg, pluginDirs };
+  return { placeArg, pluginDirs, port };
 }
 
 /**
@@ -72,7 +95,7 @@ export async function openStudio(opts: OpenOptions): Promise<void> {
   try {
     // Step 1: Inject runtime
     console.log(`📦 注入 Runtime 到: ${placePath}`);
-    await injectRuntime(placePath, { extraPluginDirs });
+    await injectRuntime(placePath, { extraPluginDirs, port: opts.port });
     console.log("✅ Runtime 注入成功");
 
     // Step 2: Open in Roblox Studio via physical-operation
@@ -111,6 +134,7 @@ Roblox Studio Hub - open 命令
   --plugin-dir, -p <dir>   额外插件目录（可多次指定）
                            目录中每个含 default.project.json 的子目录
                            将被编译并注入到 Runtime
+  --port <number>          指定 Hub 端口（注入到 Runtime 供 Studio Plugin 读取）
 
 示例:
   roblox-studio-hub open MyGame.rbxl

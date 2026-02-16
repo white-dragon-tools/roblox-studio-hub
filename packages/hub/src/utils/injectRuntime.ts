@@ -65,6 +65,8 @@ async function buildPluginRbxm(
 export interface InjectOptions {
   /** Extra plugin directories (from --plugin-dir) */
   readonly extraPluginDirs?: ReadonlyArray<string>;
+  /** Hub port to inject (Studio Plugin reads this to connect) */
+  readonly port?: number;
 }
 
 /**
@@ -149,9 +151,12 @@ export async function injectRuntime(
 
   // 3. Inject via lune
   try {
+    const portArgs =
+      options?.port != null ? ["--port", String(options.port)] : [];
     const luneArgs = [
       "run",
       INJECT_SCRIPT,
+      ...portArgs,
       placePath,
       runtimeRbxm,
       ...pluginRbxms,

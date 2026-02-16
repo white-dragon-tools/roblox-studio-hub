@@ -467,7 +467,10 @@ RunService.Heartbeat:Connect(function()
 	end
 end)
 
--- Auto-connect on load
+-- Auto-connect on load: read injected port, fallback to DEFAULT_PORT
 task.delay(1, function()
-	connect(DEFAULT_PORT)
+	local injectedPort = runtimeModule and runtimeModule:GetAttribute("HubPort")
+	local autoPort = (type(injectedPort) == "number" and injectedPort > 0) and injectedPort or DEFAULT_PORT
+	portInput.Text = tostring(autoPort)
+	connect(autoPort)
 end)

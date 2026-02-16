@@ -1,11 +1,11 @@
 {
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "build": "npm run build -w packages/hub",
-    "test": "npm run test -w packages/hub",
-    "dev": "npm run dev -w packages/hub"
+    "build": "pnpm --filter ./packages/hub build",
+    "test": "pnpm -r test",
+    "dev": "pnpm --filter ./packages/hub dev"
+  },
+  "dependencies": {
+    "@white-dragon-tools/roblox-studio-physical-operation": "^0.7.2"
   }
 }

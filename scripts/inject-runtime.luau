@@ -3,7 +3,7 @@
 
 	Injects a .rbxm model into a .rbxl place file under ReplicatedStorage.
 
-	Usage: lune run scripts/inject-runtime -- <place.rbxl> <runtime.rbxm> [plugin1.rbxm ...]
+	Usage: lune run scripts/inject-runtime -- [--port N] <place.rbxl> <runtime.rbxm> [plugin1.rbxm ...]
 
 	The runtime .rbxm is placed as ReplicatedStorage.__HubRuntime__
 	Additional plugin .rbxm files are placed under __HubRuntime__.plugins
@@ -14,16 +14,41 @@ local fs = require("@lune/fs")
 local process = require("@lune/process")
 
 local args = process.args
-if #args < 2 then
-	print("Usage: lune run scripts/inject-runtime -- <place.rbxl> <runtime.rbxm> [plugin1.rbxm ...]")
+
+-- Extract --port named flag before processing positional args
+local hubPort: number? = nil
+local positionalArgs = {}
+do
+	local i = 1
+	while i <= #args do
+		if args[i] == "--port" then
+			i = i + 1
+			if i > #args then
+				print("Error: --port requires a value")
+				process.exit(1)
+			end
+			hubPort = tonumber(args[i])
+			if not hubPort then
+				print("Error: --port value must be a number, got: " .. args[i])
+				process.exit(1)
+			end
+		else
+			table.insert(positionalArgs, args[i])
+		end
+		i = i + 1
+	end
+end
+
+if #positionalArgs < 2 then
+	print("Usage: lune run scripts/inject-runtime -- [--port N] <place.rbxl> <runtime.rbxm> [plugin1.rbxm ...]")
 	process.exit(1)
 end
 
-local placePath = args[1]
-local runtimeRbxmPath = args[2]
+local placePath = positionalArgs[1]
+local runtimeRbxmPath = positionalArgs[2]
 local pluginRbxmPaths = {}
-for i = 3, #args do
-	table.insert(pluginRbxmPaths, args[i])
+for i = 3, #positionalArgs do
+	table.insert(pluginRbxmPaths, positionalArgs[i])
 end
 
 -- Read place file
@@ -88,6 +113,11 @@ end
 -- Insert runtime into ReplicatedStorage
 runtimeRoot.Name = "__HubRuntime__"
 runtimeRoot.Parent = replicatedStorage
+
+-- Set HubPort attribute if --port was specified
+if hubPort then
+	runtimeRoot:SetAttribute("HubPort", hubPort)
+end
 
 -- Create or find plugins folder under __HubRuntime__
 local pluginsFolder = nil

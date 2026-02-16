@@ -9,9 +9,7 @@ describe("parseOpenArgs", () => {
     exitMock = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit called");
     });
-    consoleErrorMock = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
+    consoleErrorMock = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -203,6 +201,94 @@ describe("parseOpenArgs", () => {
     expect(result).toEqual({
       placeArg: "second.rbxl",
       pluginDirs: [],
+    });
+  });
+
+  // --port tests
+  it("解析 --port 参数", () => {
+    const result = parseOpenArgs([
+      "node",
+      "hub",
+      "open",
+      "--port",
+      "12345",
+      "game.rbxl",
+    ]);
+    expect(result).toEqual({
+      placeArg: "game.rbxl",
+      pluginDirs: [],
+      port: 12345,
+    });
+  });
+
+  it("支持 --port=value 语法", () => {
+    const result = parseOpenArgs([
+      "node",
+      "hub",
+      "open",
+      "--port=9999",
+      "game.rbxl",
+    ]);
+    expect(result).toEqual({
+      placeArg: "game.rbxl",
+      pluginDirs: [],
+      port: 9999,
+    });
+  });
+
+  it("--port 缺少值时调用 process.exit", () => {
+    expect(() => {
+      parseOpenArgs(["node", "hub", "open", "--port"]);
+    }).toThrow("process.exit called");
+
+    expect(exitMock).toHaveBeenCalledWith(1);
+    expect(consoleErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining("--port 需要指定端口号"),
+    );
+  });
+
+  it("--port 值非数字时调用 process.exit", () => {
+    expect(() => {
+      parseOpenArgs(["node", "hub", "open", "--port", "abc", "game.rbxl"]);
+    }).toThrow("process.exit called");
+
+    expect(exitMock).toHaveBeenCalledWith(1);
+    expect(consoleErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining("--port 值必须是数字"),
+    );
+  });
+
+  it("--port=value 值非数字时调用 process.exit", () => {
+    expect(() => {
+      parseOpenArgs(["node", "hub", "open", "--port=abc", "game.rbxl"]);
+    }).toThrow("process.exit called");
+
+    expect(exitMock).toHaveBeenCalledWith(1);
+    expect(consoleErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining("--port 值必须是数字"),
+    );
+  });
+
+  it("不传 --port 时 port 为 undefined", () => {
+    const result = parseOpenArgs(["node", "hub", "open", "game.rbxl"]);
+    expect(result.port).toBeUndefined();
+  });
+
+  it("--port 与 --plugin-dir 混合使用", () => {
+    const result = parseOpenArgs([
+      "node",
+      "hub",
+      "open",
+      "--plugin-dir",
+      "./plugins",
+      "--port",
+      "8080",
+      "game.rbxl",
+    ]);
+    expect(result).toEqual({
+      placeArg: "game.rbxl",
+      pluginDirs: ["./plugins"],
+      port: 8080,
     });
   });
 });
