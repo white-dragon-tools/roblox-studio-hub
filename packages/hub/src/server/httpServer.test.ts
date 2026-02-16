@@ -370,5 +370,30 @@ describe("httpServer", () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("Method not available");
     });
+
+    it("context 不匹配应返回 400", async () => {
+      const methods = [
+        {
+          name: "getStudioInfo",
+          description: "Get info",
+          inputSchema: { type: "object" as const, properties: {} },
+          context: "edit" as const,
+        },
+      ];
+
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo({ methods }) });
+
+      // 切换到 play 状态
+      studioManager.updateGameState("local:TestPlace", "play");
+
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/call")
+        .send({ method: "getStudioInfo", params: {} });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("context");
+    });
   });
 });

@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import http from "http";
 import { WebSocket } from "ws";
+import request from "supertest";
 import { StudioManager } from "../hub/StudioManager.js";
 import { createWsServer } from "./wsServer.js";
+import { createApp } from "./httpServer.js";
 import type { HelloMessage } from "./wsProtocol.js";
+import type { MethodDescriptor } from "../types.js";
 
 function getPort(server: http.Server): number {
   const addr = server.address();
@@ -49,7 +52,14 @@ function waitForMessage(ws: WebSocket, timeout = 2000): Promise<unknown> {
 describe("wsServer", () => {
   let httpServer: http.Server;
   let studioManager: StudioManager;
-  let pendingResults: Map<string, { resolve: (v: unknown) => void; timer: ReturnType<typeof setTimeout>; runtimeLogs: unknown[] }>;
+  let pendingResults: Map<
+    string,
+    {
+      resolve: (v: unknown) => void;
+      timer: ReturnType<typeof setTimeout>;
+      runtimeLogs: unknown[];
+    }
+  >;
 
   beforeEach(async () => {
     studioManager = new StudioManager();
@@ -144,7 +154,9 @@ describe("wsServer", () => {
     let resolved: unknown = null;
     const timer = setTimeout(() => {}, 30000);
     pendingResults.set("req-1", {
-      resolve: (v) => { resolved = v; },
+      resolve: (v) => {
+        resolved = v;
+      },
       timer,
       runtimeLogs: [],
     });
@@ -202,10 +214,234 @@ describe("wsServer", () => {
       }),
     );
 
-    const cmd = (await cmdPromise) as { type: string; id: string; method: string };
+    const cmd = (await cmdPromise) as {
+      type: string;
+      id: string;
+      method: string;
+    };
     expect(cmd.type).toBe("command");
     expect(cmd.id).toBe("cmd-1");
     expect(cmd.method).toBe("execute");
+
+    ws.close();
+  });
+});
+
+// ==================== WS + HTTP 集成 ====================
+
+/** 消息收集器：缓冲 WS 消息并按顺序取出 */
+function collectMessages(ws: WebSocket) {
+  const queue: unknown[] = [];
+  const waiters: Array<{
+    resolve: (msg: unknown) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }> = [];
+
+  ws.on("message", (data) => {
+    const msg = JSON.parse(data.toString());
+    if (waiters.length > 0) {
+      const waiter = waiters.shift()!;
+      clearTimeout(waiter.timer);
+      waiter.resolve(msg);
+    } else {
+      queue.push(msg);
+    }
+  });
+
+  return {
+    next(timeout = 2000): Promise<unknown> {
+      if (queue.length > 0) {
+        return Promise.resolve(queue.shift()!);
+      }
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const idx = waiters.findIndex((w) => w.timer === timer);
+          if (idx >= 0) waiters.splice(idx, 1);
+          reject(new Error("timeout waiting for message"));
+        }, timeout);
+        waiters.push({ resolve, timer });
+      });
+    },
+  };
+}
+
+/** 用 .end() 触发请求并返回 Promise */
+function fireRequest(req: request.Test): Promise<request.Response> {
+  return new Promise((resolve, reject) => {
+    req.end((err, res) => {
+      if (err && !res) return reject(err);
+      resolve(res);
+    });
+  });
+}
+
+const testMethods: MethodDescriptor[] = [
+  {
+    name: "execute",
+    description: "Execute Lua code",
+    inputSchema: {
+      type: "object",
+      properties: { code: { type: "string" } },
+    },
+    context: "both",
+  },
+  {
+    name: "getStudioInfo",
+    description: "Get info",
+    inputSchema: { type: "object", properties: {} },
+    context: "edit",
+  },
+];
+
+describe("WS + HTTP 集成", () => {
+  let fullHttpServer: http.Server;
+  let fullStudioManager: StudioManager;
+  let fullPort: number;
+
+  beforeEach(async () => {
+    fullStudioManager = new StudioManager();
+    const result = createApp({
+      studioManager: fullStudioManager,
+      pluginTools: [],
+    });
+    fullHttpServer = http.createServer(result.app);
+    createWsServer({
+      httpServer: fullHttpServer,
+      studioManager: fullStudioManager,
+      pendingResults: result.state.pendingResults,
+    });
+    await new Promise<void>((resolve) => fullHttpServer.listen(0, resolve));
+    fullPort = getPort(fullHttpServer);
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => fullHttpServer.close(() => resolve()));
+  });
+
+  /** 连接 WS 并完成 hello/welcome 握手 */
+  async function connectStudio(placeName: string) {
+    const ws = await connectWs(fullPort);
+    const messages = collectMessages(ws);
+    ws.send(
+      JSON.stringify(
+        makeHello({
+          studioInfo: {
+            placeId: 0,
+            placeName,
+            gameId: 0,
+            userId: 0,
+          },
+          methods: testMethods,
+        }),
+      ),
+    );
+    await messages.next(); // welcome
+    return { ws, messages };
+  }
+
+  it("POST /call → WS command → WS result → HTTP 200", async () => {
+    const { ws, messages } = await connectStudio("WsCmdPlace");
+
+    const callDone = fireRequest(
+      request(fullHttpServer)
+        .post("/api/studios/local:WsCmdPlace/call")
+        .send({ method: "execute", params: { code: "1+1" }, timeout: 5 }),
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    const cmd = (await messages.next()) as {
+      type: string;
+      id: string;
+      method: string;
+      params: { code: string };
+    };
+    expect(cmd.type).toBe("command");
+    expect(cmd.method).toBe("execute");
+    expect(cmd.params.code).toBe("1+1");
+
+    ws.send(
+      JSON.stringify({
+        type: "result",
+        id: cmd.id,
+        payload: { success: true, result: 2 },
+      }),
+    );
+
+    const res = await callDone;
+    expect(res.body.success).toBe(true);
+    expect(res.body.result).toBe(2);
+
+    ws.close();
+  });
+
+  it("多 Studio 并发: 命令路由到正确的 Studio", async () => {
+    const s1 = await connectStudio("Studio1");
+    const s2 = await connectStudio("Studio2");
+
+    expect(fullStudioManager.getAll()).toHaveLength(2);
+
+    const callDone = fireRequest(
+      request(fullHttpServer)
+        .post("/api/studios/local:Studio2/call")
+        .send({ method: "execute", params: { code: "2+2" }, timeout: 5 }),
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    const cmd = (await s2.messages.next()) as { id: string };
+    s2.ws.send(
+      JSON.stringify({
+        type: "result",
+        id: cmd.id,
+        payload: { success: true, result: 4 },
+      }),
+    );
+
+    const res = await callDone;
+    expect(res.body.result).toBe(4);
+
+    s1.ws.close();
+    s2.ws.close();
+  });
+
+  it("并发命令: 同时多个命令都能完成", async () => {
+    const { ws, messages } = await connectStudio("ConcPlace");
+
+    const call1Done = fireRequest(
+      request(fullHttpServer)
+        .post("/api/studios/local:ConcPlace/call")
+        .send({ method: "execute", params: { code: "a" }, timeout: 5 }),
+    );
+    const call2Done = fireRequest(
+      request(fullHttpServer)
+        .post("/api/studios/local:ConcPlace/call")
+        .send({ method: "execute", params: { code: "b" }, timeout: 5 }),
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    const cmd1 = (await messages.next()) as { id: string };
+    const cmd2 = (await messages.next()) as { id: string };
+
+    ws.send(
+      JSON.stringify({
+        type: "result",
+        id: cmd1.id,
+        payload: { success: true, result: "r1" },
+      }),
+    );
+    ws.send(
+      JSON.stringify({
+        type: "result",
+        id: cmd2.id,
+        payload: { success: true, result: "r2" },
+      }),
+    );
+
+    const [res1, res2] = await Promise.all([call1Done, call2Done]);
+    expect(res1.body.success).toBe(true);
+    expect(res2.body.success).toBe(true);
 
     ws.close();
   });
