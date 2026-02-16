@@ -8,6 +8,7 @@ dist/
 .DS_STORE
 .gulp-metadata.json
 .local-hub/
+coverage/
 
 # Keep test fixture
 !tests/game.rbxl
