@@ -414,6 +414,7 @@ describe("httpServer", () => {
       // 添加一些日志
       studioManager.addLog("local:TestPlace", {
         timestamp: Date.now(),
+        source: "test",
         level: "info",
         message: "Test log",
       });
@@ -433,6 +434,7 @@ describe("httpServer", () => {
       for (let i = 0; i < 5; i++) {
         studioManager.addLog("local:TestPlace", {
           timestamp: Date.now(),
+          source: "test",
           level: "info",
           message: `Log ${i}`,
         });

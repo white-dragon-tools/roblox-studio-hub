@@ -395,7 +395,7 @@ describe("openStudio", () => {
       expect.objectContaining({ extraPluginDirs: [] }),
     );
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("注入 Runtime");
     expect(output).toContain("Runtime 注入成功");
   });

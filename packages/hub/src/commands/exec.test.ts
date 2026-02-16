@@ -175,7 +175,7 @@ describe("execCommand", () => {
       mode: "eval",
     });
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("执行成功");
     expect(output).toContain("42");
   });
@@ -231,7 +231,7 @@ describe("execCommand", () => {
 
     await execCommand({ studioId: "local:Test", code: "x", mode: "eval" });
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("服务端日志");
     expect(output).toContain("客户端日志");
   });
@@ -267,7 +267,7 @@ describe("execCommand", () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalled();
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("执行成功");
   });
 

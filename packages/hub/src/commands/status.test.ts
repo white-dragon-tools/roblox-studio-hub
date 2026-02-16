@@ -74,7 +74,7 @@ describe("showStatus", () => {
 
     await showStatus("1.0.0");
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("v1.0.0");
     expect(output).toContain("✅");
   });
@@ -85,7 +85,7 @@ describe("showStatus", () => {
 
     await showStatus("2.0.0");
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("v2.0.0");
     expect(output).toContain("❌");
   });
@@ -96,7 +96,7 @@ describe("showStatus", () => {
 
     await showStatus("1.0.0");
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("⚠️");
   });
 });
@@ -125,7 +125,7 @@ describe("listStudios", () => {
 
     await listStudios();
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("没有连接的 Studio");
   });
 
@@ -146,7 +146,7 @@ describe("listStudios", () => {
 
     await listStudios();
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("local:MyGame");
     expect(output).toContain("MyGame");
   });
@@ -212,7 +212,7 @@ describe("showStudioInfo", () => {
 
     await showStudioInfo("local:MyGame");
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("local:MyGame");
     expect(output).toContain("MyGame");
   });
@@ -269,7 +269,7 @@ describe("showStudioLogs", () => {
 
     await showStudioLogs("local:MyGame");
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("暂无日志");
   });
 
@@ -300,7 +300,7 @@ describe("showStudioLogs", () => {
 
     await showStudioLogs("local:MyGame", 50);
 
-    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join("\n");
     expect(output).toContain("Hello world");
     expect(output).toContain("Something failed");
   });

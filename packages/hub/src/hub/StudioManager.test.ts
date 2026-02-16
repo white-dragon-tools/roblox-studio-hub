@@ -122,6 +122,7 @@ describe("StudioManager", () => {
 
       manager.addLog("local:TestPlace", {
         timestamp: Date.now(),
+        source: "test",
         level: "info",
         message: "Test log",
       });
@@ -135,6 +136,7 @@ describe("StudioManager", () => {
       // Should not throw
       manager.addLog("nonexistent", {
         timestamp: Date.now(),
+        source: "test",
         level: "info",
         message: "Test",
       });
@@ -147,6 +149,7 @@ describe("StudioManager", () => {
       for (let i = 0; i < 501; i++) {
         manager.addLog("local:TestPlace", {
           timestamp: Date.now(),
+          source: "test",
           level: "info",
           message: `Log ${i}`,
         });
@@ -170,6 +173,7 @@ describe("StudioManager", () => {
       for (let i = 0; i < 10; i++) {
         manager.addLog("local:TestPlace", {
           timestamp: Date.now(),
+          source: "test",
           level: "info",
           message: `Log ${i}`,
         });
