@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { createApp, type AppState } from "./httpServer.js";
 import { StudioManager } from "../hub/StudioManager.js";
+import { SubscriptionManager } from "../hub/subscriptionManager.js";
 import type { StudioInfo } from "../types.js";
 import type express from "express";
 
@@ -394,6 +395,206 @@ describe("httpServer", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("context");
+    });
+  });
+
+  // ==================== GET /api/studios/:id/logs ====================
+
+  describe("GET /api/studios/:id/logs", () => {
+    it("Studio 不存在应返回 404", async () => {
+      const res = await request(app).get("/api/studios/local:NotExist/logs");
+      expect(res.status).toBe(404);
+    });
+
+    it("应返回 Studio 日志", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo() });
+
+      // 添加一些日志
+      studioManager.addLog("local:TestPlace", {
+        timestamp: Date.now(),
+        level: "info",
+        message: "Test log",
+      });
+
+      const res = await request(app).get("/api/studios/local:TestPlace/logs");
+
+      expect(res.status).toBe(200);
+      expect(res.body.logs).toHaveLength(1);
+      expect(res.body.logs[0].message).toBe("Test log");
+    });
+
+    it("应支持 limit 查询参数", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo() });
+
+      for (let i = 0; i < 5; i++) {
+        studioManager.addLog("local:TestPlace", {
+          timestamp: Date.now(),
+          level: "info",
+          message: `Log ${i}`,
+        });
+      }
+
+      const res = await request(app).get(
+        "/api/studios/local:TestPlace/logs?limit=2",
+      );
+
+      expect(res.body.logs).toHaveLength(2);
+    });
+  });
+
+  // ==================== Notification API ====================
+
+  describe("POST /api/studios/:id/subscribe", () => {
+    it("缺少参数应返回 400", async () => {
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/subscribe")
+        .send({});
+      expect(res.status).toBe(400);
+    });
+
+    it("Studio 不存在应返回 404", async () => {
+      const res = await request(app)
+        .post("/api/studios/local:NotExist/subscribe")
+        .send({ event: "test", subscriberId: "sub-1" });
+      expect(res.status).toBe(404);
+    });
+
+    it("应成功订阅事件", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo() });
+
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/subscribe")
+        .send({ event: "selectionChanged", subscriberId: "sub-1" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
+
+  describe("POST /api/studios/:id/unsubscribe", () => {
+    it("缺少参数应返回 400", async () => {
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/unsubscribe")
+        .send({});
+      expect(res.status).toBe(400);
+    });
+
+    it("Studio 不存在应返回 404", async () => {
+      const res = await request(app)
+        .post("/api/studios/local:NotExist/unsubscribe")
+        .send({ event: "test", subscriberId: "sub-1" });
+      expect(res.status).toBe(404);
+    });
+
+    it("应成功取消订阅事件", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo() });
+
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/unsubscribe")
+        .send({ event: "selectionChanged", subscriberId: "sub-1" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
+
+  // ==================== UI API ====================
+
+  describe("GET /api/ui/init", () => {
+    it("应返回所有 Studio 的初始化数据", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo() });
+
+      const res = await request(app).get("/api/ui/init");
+
+      expect(res.status).toBe(200);
+      expect(res.body.studios).toHaveLength(1);
+      expect(res.body.studios[0].placeName).toBe("TestPlace");
+    });
+
+    it("无 Studio 时返回空列表", async () => {
+      const res = await request(app).get("/api/ui/init");
+      expect(res.status).toBe(200);
+      expect(res.body.studios).toEqual([]);
+    });
+  });
+
+  describe("GET /api/ui/poll", () => {
+    it("有新事件时立即返回", async () => {
+      // 先注册 Studio（触发 studio_connected 事件）
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo() });
+
+      const res = await request(app).get("/api/ui/poll?since=0&timeout=1");
+
+      expect(res.status).toBe(200);
+      expect(res.body.events.length).toBeGreaterThan(0);
+      expect(res.body.events[0].type).toBe("studio_connected");
+    });
+
+    it("无新事件且超时后返回空列表", async () => {
+      // timeout=1 → 1 second wait before returning empty events
+      const res = await request(app).get(
+        "/api/ui/poll?since=9999999999999&timeout=1",
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.events).toEqual([]);
+    }, 5000);
+  });
+
+  // ==================== resolveStudio 辅助 ====================
+
+  describe("resolveStudio (via GET /api/studios/:id)", () => {
+    it("应通过数字 ID 查找 place Studio", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo({ placeId: 99999 }) });
+
+      const res = await request(app).get("/api/studios/99999");
+      expect(res.status).toBe(200);
+      expect(res.body.placeName).toBe("TestPlace");
+    });
+
+    it("应通过 place: 前缀查找 Studio", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo({ placeId: 12345 }) });
+
+      const res = await request(app).get("/api/studios/place:12345");
+      expect(res.status).toBe(200);
+    });
+
+    it("应通过 path: 前缀查找 Studio", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({
+          studioInfo: makeStudioInfo({ localPath: "/tmp/game.rbxl" }),
+        });
+
+      const res = await request(app).get(
+        "/api/studios/" + encodeURIComponent("path:/tmp/game.rbxl"),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it("应通过 placeName 查找（无前缀）", async () => {
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo({ placeName: "MyGame" }) });
+
+      const res = await request(app).get("/api/studios/MyGame");
+      expect(res.status).toBe(200);
     });
   });
 });

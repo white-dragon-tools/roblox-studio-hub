@@ -1,5 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { parseOpenArgs } from "./open.js";
+import { parseOpenArgs, openStudio, showOpenHelp } from "./open.js";
+
+// Mock injectRuntime
+vi.mock("../utils/injectRuntime.js", () => ({
+  injectRuntime: vi.fn(),
+}));
+
+// Mock fs
+vi.mock("fs", async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof import("fs");
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      existsSync: vi.fn(actual.existsSync),
+    },
+    existsSync: vi.fn(actual.existsSync),
+  };
+});
+
+import { injectRuntime } from "../utils/injectRuntime.js";
+import fs from "fs";
+
+const mockInjectRuntime = injectRuntime as unknown as ReturnType<typeof vi.fn>;
+const mockExistsSync = fs.existsSync as unknown as ReturnType<typeof vi.fn>;
 
 describe("parseOpenArgs", () => {
   let exitMock: ReturnType<typeof vi.spyOn>;
@@ -290,5 +314,109 @@ describe("parseOpenArgs", () => {
       pluginDirs: ["./plugins"],
       port: 8080,
     });
+  });
+});
+
+describe("openStudio", () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let exitMock: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    exitMock = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit called");
+    });
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("缺少 place 路径时报错退出", async () => {
+    await expect(openStudio({ placeArg: "", pluginDirs: [] })).rejects.toThrow(
+      "process.exit called",
+    );
+
+    expect(exitMock).toHaveBeenCalledWith(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("缺少 place 文件路径"),
+    );
+  });
+
+  it("文件不存在时报错退出", async () => {
+    mockExistsSync.mockReturnValue(false);
+
+    await expect(
+      openStudio({ placeArg: "/nonexistent.rbxl", pluginDirs: [] }),
+    ).rejects.toThrow("process.exit called");
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("文件不存在"),
+    );
+  });
+
+  it("插件目录不存在时报错退出", async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      if (typeof p === "string" && p.endsWith(".rbxl")) return true;
+      return false; // plugin dir doesn't exist
+    });
+
+    await expect(
+      openStudio({
+        placeArg: "/game.rbxl",
+        pluginDirs: ["/nonexistent-plugins"],
+      }),
+    ).rejects.toThrow("process.exit called");
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("插件目录不存在"),
+    );
+  });
+
+  it("成功注入并打开 Studio", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockInjectRuntime.mockResolvedValue(undefined);
+
+    // Mock the dynamic import of physical-operation
+    vi.mock(
+      "@white-dragon-tools/roblox-studio-physical-operation/studio-manager",
+      () => ({
+        openPlace: vi.fn().mockResolvedValue([true, "Place opened"]),
+      }),
+    );
+
+    await openStudio({ placeArg: "/game.rbxl", pluginDirs: [] });
+
+    expect(mockInjectRuntime).toHaveBeenCalledWith(
+      expect.stringContaining("game.rbxl"),
+      expect.objectContaining({ extraPluginDirs: [] }),
+    );
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("注入 Runtime");
+    expect(output).toContain("Runtime 注入成功");
+  });
+
+  it("注入失败时报错退出", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockInjectRuntime.mockRejectedValue(new Error("Inject failed"));
+
+    await expect(
+      openStudio({ placeArg: "/game.rbxl", pluginDirs: [] }),
+    ).rejects.toThrow("process.exit called");
+
+    expect(errorSpy).toHaveBeenCalledWith("❌ 操作失败:", "Inject failed");
+  });
+});
+
+describe("showOpenHelp", () => {
+  it("输出帮助信息", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    showOpenHelp();
+    expect(logSpy).toHaveBeenCalled();
+    logSpy.mockRestore();
   });
 });
