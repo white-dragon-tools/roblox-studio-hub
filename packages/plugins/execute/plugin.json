@@ -1,0 +1,36 @@
+{
+  "name": "execute",
+  "version": "0.1.0",
+  "description": "Execute Lua code in Roblox Studio. Supports eval, run, and play modes.",
+  "author": "white-dragon-tools",
+  "entry": "src/init.lua",
+  "license": "MIT",
+  "keywords": ["execute", "lua", "eval", "run", "play"],
+  "tools": [
+    {
+      "name": "execute",
+      "description": "Execute Lua code in Roblox Studio. Supports three modes: eval (direct loadstring), run (server-side via StudioTestService), play (full client+server test).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Lua source code to execute",
+            "x-file": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["eval", "run", "play"],
+            "description": "Execution mode. eval: direct loadstring, run: server test via StudioTestService, play: full Play mode test"
+          },
+          "timeout": {
+            "type": "number",
+            "description": "Execution timeout in seconds",
+            "default": 30
+          }
+        },
+        "required": ["code"]
+      }
+    }
+  ]
+}

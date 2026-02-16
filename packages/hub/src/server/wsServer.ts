@@ -1,12 +1,14 @@
 import { WebSocketServer, type WebSocket } from "ws";
 import type http from "http";
 import type { StudioManager } from "../hub/StudioManager.js";
+import type { SubscriptionManager } from "../hub/subscriptionManager.js";
 import {
   parseUpstreamMessage,
   serializeDownstreamMessage,
   type HelloMessage,
   type ResultMessage,
   type StateMessage,
+  type NotifyMessage,
 } from "./wsProtocol.js";
 
 export interface WsServerDeps {
@@ -20,10 +22,11 @@ export interface WsServerDeps {
       runtimeLogs: unknown[];
     }
   >;
+  subscriptionManager?: SubscriptionManager;
 }
 
 export function createWsServer(deps: WsServerDeps): WebSocketServer {
-  const { studioManager, pendingResults } = deps;
+  const { studioManager, pendingResults, subscriptionManager } = deps;
 
   const wss = new WebSocketServer({ server: deps.httpServer });
 
@@ -58,7 +61,7 @@ export function createWsServer(deps: WsServerDeps): WebSocketServer {
           studioManager.heartbeat(studioId);
           break;
         case "notify":
-          // Phase 后续实现
+          handleNotify(studioId, msg, subscriptionManager);
           break;
       }
     });
@@ -66,6 +69,7 @@ export function createWsServer(deps: WsServerDeps): WebSocketServer {
     ws.on("close", () => {
       if (studioId) {
         studioManager.unregisterById(studioId);
+        subscriptionManager?.removeStudio(studioId);
         console.log(`[WS] Studio disconnected: ${studioId}`);
       }
     });
@@ -129,4 +133,18 @@ function handleState(
 ): void {
   studioManager.updateGameState(studioId, msg.gameState);
   console.log(`[WS] Studio ${studioId} gameState → ${msg.gameState}`);
+}
+
+function handleNotify(
+  studioId: string,
+  msg: NotifyMessage,
+  subscriptionManager?: SubscriptionManager,
+): void {
+  if (!subscriptionManager) return;
+  const count = subscriptionManager.dispatch(studioId, msg.event, msg.data);
+  if (count > 0) {
+    console.log(
+      `[WS] Notification ${msg.event} from ${studioId} → ${count} subscriber(s)`,
+    );
+  }
 }

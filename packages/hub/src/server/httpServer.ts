@@ -22,6 +22,7 @@ import {
 } from "../utils/fileResolver.js";
 import { discoverPluginTools } from "../hub/pluginDiscovery.js";
 import type { PluginToolDef } from "../hub/pluginTypes.js";
+import { SubscriptionManager } from "../hub/subscriptionManager.js";
 import { createWsServer } from "./wsServer.js";
 import {
   serializeDownstreamMessage,
@@ -62,11 +63,13 @@ export interface AppOptions {
   studioManager: StudioManager;
   pluginTools?: ReadonlyArray<PluginToolDef>;
   staticDir?: string;
+  subscriptionManager?: SubscriptionManager;
 }
 
 export interface AppState {
   pendingCommands: Map<string, PendingCommand[]>;
   pendingResults: Map<string, PendingResult>;
+  subscriptionManager: SubscriptionManager;
 }
 
 /**
@@ -89,6 +92,24 @@ export function createApp(options: AppOptions): {
   // === Internal state ===
   const pendingCommands: Map<string, PendingCommand[]> = new Map();
   const pendingResults: Map<string, PendingResult> = new Map();
+
+  // Subscription manager with WS forwarding
+  const subscriptionManager =
+    options.subscriptionManager ??
+    new SubscriptionManager({
+      onStudioSubscribe: (studioId, event) => {
+        const ws = studioManager.getWs(studioId);
+        if (ws && ws.readyState === 1) {
+          ws.send(serializeDownstreamMessage({ type: "subscribe", event }));
+        }
+      },
+      onStudioUnsubscribe: (studioId, event) => {
+        const ws = studioManager.getWs(studioId);
+        if (ws && ws.readyState === 1) {
+          ws.send(serializeDownstreamMessage({ type: "unsubscribe", event }));
+        }
+      },
+    });
   const uiEvents: UIEvent[] = [];
   const MAX_UI_EVENTS = 100;
   const waitingUIPolls: Set<Response> = new Set();
@@ -411,6 +432,55 @@ export function createApp(options: AppOptions): {
     }
   });
 
+  // ==================== Notification API ====================
+
+  // 订阅 Studio 事件
+  app.post("/api/studios/:id/subscribe", (req: Request, res: Response) => {
+    const { event, subscriberId } = req.body as {
+      event: string;
+      subscriberId: string;
+    };
+
+    if (!event || !subscriberId) {
+      res.status(400).json({ error: "event and subscriberId are required" });
+      return;
+    }
+
+    const studio = resolveStudio(req.params.id);
+    if (!studio) {
+      res.status(404).json({ error: "Studio not found" });
+      return;
+    }
+
+    subscriptionManager.subscribe(studio.id, event, subscriberId, () => {
+      /* HTTP subscribers poll for notifications */
+    });
+
+    res.json({ success: true, studioId: studio.id, event });
+  });
+
+  // 取消订阅
+  app.post("/api/studios/:id/unsubscribe", (req: Request, res: Response) => {
+    const { event, subscriberId } = req.body as {
+      event: string;
+      subscriberId: string;
+    };
+
+    if (!event || !subscriberId) {
+      res.status(400).json({ error: "event and subscriberId are required" });
+      return;
+    }
+
+    const studio = resolveStudio(req.params.id);
+    if (!studio) {
+      res.status(404).json({ error: "Studio not found" });
+      return;
+    }
+
+    subscriptionManager.unsubscribe(studio.id, event, subscriberId);
+    res.json({ success: true, studioId: studio.id, event });
+  });
+
   // ==================== UI API ====================
 
   // UI 长轮询获取更新
@@ -478,7 +548,10 @@ export function createApp(options: AppOptions): {
     });
   });
 
-  return { app, state: { pendingCommands, pendingResults } };
+  return {
+    app,
+    state: { pendingCommands, pendingResults, subscriptionManager },
+  };
 }
 
 export function createHttpServer(port: number = 8080) {
@@ -495,6 +568,7 @@ export function createHttpServer(port: number = 8080) {
     httpServer: server,
     studioManager: defaultStudioManager,
     pendingResults: state.pendingResults,
+    subscriptionManager: state.subscriptionManager,
   });
 
   server.listen(port, () => {

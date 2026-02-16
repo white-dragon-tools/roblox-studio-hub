@@ -1,11 +1,6 @@
 --!strict
 --[[
-	Execute Builtin Plugin (DEPRECATED)
-
-	This builtin is deprecated and will be removed in a future version.
-	Install the standalone plugin instead:
-	  roblox-studio-hub plugin install execute
-
+	Execute Builtin Plugin
 	Executes Lua code in Roblox Studio.
 	Supports three modes: eval (direct loadstring), run (server-side via StudioTestService), play (full client+server test).
 ]]

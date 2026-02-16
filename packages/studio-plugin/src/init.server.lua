@@ -6,7 +6,13 @@
 ]]
 
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local DEFAULT_PORT = 35888
+
+-- Only run in edit context; skip play-server (pserv) copies
+if RunService:IsRunning() then
+	return
+end
 
 local plugin = plugin or script:FindFirstAncestorWhichIsA("Plugin")
 if not plugin then
@@ -30,6 +36,7 @@ local studioId: string? = nil
 local gameState: "edit" | "play" = "edit"
 local debugMode = false
 local port = DEFAULT_PORT
+local connectionGen = 0 -- prevents stale Closed handlers from triggering reconnect
 
 -- === UI Setup ===
 
@@ -219,6 +226,15 @@ local function sendMessage(msg: { [string]: any })
 	end)
 end
 
+-- Wire notify sink (must be after sendMessage is defined)
+Runtime:setNotifySink(function(event: string, data: any)
+	sendMessage({
+		type = "notify",
+		event = event,
+		data = data,
+	})
+end)
+
 local function sendHello()
 	sendMessage({
 		type = "hello",
@@ -292,10 +308,16 @@ local function handleWsMessage(raw: string)
 		if debugMode then
 			print("[StudioHub] Subscribe:", msg.event)
 		end
+		if Runtime then
+			Runtime:activateNotification(msg.event)
+		end
 
 	elseif msg.type == "unsubscribe" then
 		if debugMode then
 			print("[StudioHub] Unsubscribe:", msg.event)
+		end
+		if Runtime then
+			Runtime:deactivateNotification(msg.event)
 		end
 	end
 end
@@ -318,6 +340,9 @@ end
 function wsConnect()
 	if not wsEnabled then return end
 
+	connectionGen = connectionGen + 1
+	local myGen = connectionGen
+
 	local wsUrl = "ws://localhost:" .. port
 
 	local ok, newWs = pcall(function()
@@ -336,10 +361,12 @@ function wsConnect()
 	ws = newWs
 
 	ws.MessageReceived:Connect(function(msg: string)
+		if myGen ~= connectionGen then return end -- stale connection
 		handleWsMessage(msg)
 	end)
 
 	ws.Closed:Connect(function()
+		if myGen ~= connectionGen then return end -- stale handler, ignore
 		ws = nil
 		if isConnected then
 			isConnected = false
@@ -350,6 +377,9 @@ function wsConnect()
 		scheduleReconnect()
 	end)
 
+	-- Wait for WS handshake to complete before sending hello
+	task.wait(0.1)
+	if myGen ~= connectionGen then return end -- superseded during wait
 	sendHello()
 end
 
@@ -407,6 +437,34 @@ end)
 -- Cleanup on plugin unload
 plugin.Unloading:Connect(function()
 	disconnect()
+end)
+
+-- Connection watchdog using Heartbeat (survives Play→Stop transitions)
+local lastWatchdogCheck = 0
+RunService.Heartbeat:Connect(function()
+	local now = os.clock()
+	if now - lastWatchdogCheck < 5 then return end
+	lastWatchdogCheck = now
+
+	if wsEnabled then
+		if ws then
+			-- Try to send a keepalive; if it fails, connection is dead
+			local ok = pcall(function()
+				ws:Send(HttpService:JSONEncode({ type = "pong" }))
+			end)
+			if not ok then
+				ws = nil
+				isConnected = false
+				updateStatus("Reconnecting...", Color3.fromRGB(255, 200, 0))
+				updateId(nil)
+				connectButton.Text = "Connect"
+				scheduleReconnect()
+			end
+		elseif not isConnected and not reconnectThread then
+			-- No WS and no reconnect scheduled
+			scheduleReconnect()
+		end
+	end
 end)
 
 -- Auto-connect on load

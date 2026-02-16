@@ -1,0 +1,19 @@
+{
+  "name": "get-studio-info",
+  "version": "0.1.0",
+  "description": "Get current Roblox Studio environment information including place ID, place name, creator info, and local path.",
+  "author": "white-dragon-tools",
+  "entry": "src/init.lua",
+  "license": "MIT",
+  "keywords": ["studio", "info", "metadata"],
+  "tools": [
+    {
+      "name": "getStudioInfo",
+      "description": "Get current Roblox Studio environment information including place ID, place name, creator info, and local path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

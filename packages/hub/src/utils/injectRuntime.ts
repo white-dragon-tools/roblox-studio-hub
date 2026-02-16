@@ -62,6 +62,30 @@ async function buildPluginRbxm(
   return outputPath;
 }
 
+export interface InjectOptions {
+  /** Extra plugin directories (from --plugin-dir) */
+  readonly extraPluginDirs?: ReadonlyArray<string>;
+}
+
+/**
+ * Collect plugin dirs from a parent directory (each subdir with default.project.json)
+ */
+function collectPluginDirsFrom(parentDir: string): string[] {
+  if (!fs.existsSync(parentDir)) return [];
+  const entries = fs.readdirSync(parentDir, { withFileTypes: true });
+  return entries
+    .filter((e) => e.isDirectory())
+    .map((e) => path.join(parentDir, e.name));
+}
+
+/**
+ * Check if a directory IS a single plugin (has default.project.json)
+ * vs a parent of multiple plugins
+ */
+function isPluginDir(dir: string): boolean {
+  return fs.existsSync(path.join(dir, "default.project.json"));
+}
+
 /**
  * 注入 Hub Runtime 到 .rbxl 文件
  *
@@ -70,7 +94,10 @@ async function buildPluginRbxm(
  * 2. rojo build 每个 plugin/ → .rbxm（可选）
  * 3. lune run inject-runtime.luau → 注入到 .rbxl
  */
-export async function injectRuntime(placePath: string): Promise<void> {
+export async function injectRuntime(
+  placePath: string,
+  options?: InjectOptions,
+): Promise<void> {
   const { execFileSync } = await import("child_process");
 
   const RUNTIME_PROJECT = resolveRuntimeProject();
@@ -89,25 +116,34 @@ export async function injectRuntime(placePath: string): Promise<void> {
     throw new Error(`Runtime 编译失败: ${stderr}`);
   }
 
-  // 2. Build plugin .rbxm files
-  const pluginsDir = getPluginsDir();
-  const pluginRbxms: string[] = [];
+  // 2. Collect all plugin directories
+  const pluginDirsToCompile: string[] = [];
 
-  if (fs.existsSync(pluginsDir)) {
-    const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      try {
-        const rbxm = await buildPluginRbxm(
-          path.join(pluginsDir, entry.name),
-          execFileSync,
-        );
-        if (rbxm) pluginRbxms.push(rbxm);
-      } catch (e) {
-        console.warn(
-          `[InjectRuntime] 插件 ${entry.name} 编译失败，跳过: ${(e as Error).message}`,
-        );
-      }
+  // 2a. Standard plugins from hub config
+  const pluginsDir = getPluginsDir();
+  pluginDirsToCompile.push(...collectPluginDirsFrom(pluginsDir));
+
+  // 2b. Extra plugin dirs from --plugin-dir
+  for (const extraDir of options?.extraPluginDirs ?? []) {
+    if (isPluginDir(extraDir)) {
+      // Single plugin directory
+      pluginDirsToCompile.push(extraDir);
+    } else {
+      // Parent directory containing multiple plugins
+      pluginDirsToCompile.push(...collectPluginDirsFrom(extraDir));
+    }
+  }
+
+  // 2c. Build each plugin
+  const pluginRbxms: string[] = [];
+  for (const pluginDir of pluginDirsToCompile) {
+    try {
+      const rbxm = await buildPluginRbxm(pluginDir, execFileSync);
+      if (rbxm) pluginRbxms.push(rbxm);
+    } catch (e) {
+      console.warn(
+        `[InjectRuntime] 插件 ${path.basename(pluginDir)} 编译失败，跳过: ${(e as Error).message}`,
+      );
     }
   }
 

@@ -37,6 +37,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@white-dragon-tools/roblox-studio-physical-operation": "^0.6.2",
     "express": "^4.18.2",
     "uuid": "^9.0.0",

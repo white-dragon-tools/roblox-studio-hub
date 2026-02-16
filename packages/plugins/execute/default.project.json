@@ -1,0 +1,15 @@
+{
+  "name": "execute",
+  "tree": {
+    "$className": "ModuleScript",
+    "$path": "src/init.lua",
+    "server-runner": {
+      "$className": "ModuleScript",
+      "$path": "src/server-runner.lua"
+    },
+    "client-runner": {
+      "$className": "ModuleScript",
+      "$path": "src/client-runner.lua"
+    }
+  }
+}

@@ -1,11 +1,6 @@
 --!strict
 --[[
-	GetStudioInfo Builtin Plugin (DEPRECATED)
-
-	This builtin is deprecated and will be removed in a future version.
-	Install the standalone plugin instead:
-	  roblox-studio-hub plugin install get-studio-info
-
+	GetStudioInfo Builtin Plugin
 	Returns current Roblox Studio environment information.
 ]]
 

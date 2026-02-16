@@ -1,0 +1,16 @@
+{
+  "name": "Official Roblox Studio Hub Plugins",
+  "description": "Official plugin marketplace for Roblox Studio Hub",
+  "plugins": [
+    {
+      "name": "execute",
+      "description": "Execute Lua code in Roblox Studio. Supports eval, run, and play modes.",
+      "source": "./execute"
+    },
+    {
+      "name": "get-studio-info",
+      "description": "Get current Roblox Studio environment information.",
+      "source": "./get-studio-info"
+    }
+  ]
+}

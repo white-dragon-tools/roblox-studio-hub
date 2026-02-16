@@ -7,5 +7,9 @@
   },
   "repository": "https://github.com/white-dragon-tools/roblox-studio-hub",
   "license": "MIT",
-  "keywords": ["roblox", "studio", "lua", "game-development", "remote-execution"]
+  "keywords": ["roblox", "studio", "lua", "game-development", "remote-execution"],
+  "mcp": {
+    "command": "roblox-studio-hub",
+    "args": ["mcp"]
+  }
 }

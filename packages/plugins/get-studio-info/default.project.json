@@ -1,0 +1,7 @@
+{
+  "name": "get-studio-info",
+  "tree": {
+    "$className": "ModuleScript",
+    "$path": "src/init.lua"
+  }
+}
