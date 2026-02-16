@@ -6,14 +6,38 @@ import { getPluginsDir } from "../hub/hubPaths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** 项目根目录 */
-const PROJECT_ROOT = path.join(__dirname, "..", "..");
+/** Hub 包根目录 (packages/hub/) */
+const HUB_ROOT = path.join(__dirname, "..", "..");
 
-/** Runtime 的 Rojo 项目配置路径 */
-const RUNTIME_PROJECT = path.join(PROJECT_ROOT, "runtime", "default.project.json");
+/** Monorepo 根目录 */
+const MONOREPO_ROOT = path.join(HUB_ROOT, "..", "..");
 
-/** Lune 注入脚本路径 */
-const INJECT_SCRIPT = path.join(PROJECT_ROOT, "scripts", "inject-runtime.luau");
+/** 查找 Runtime Rojo 项目配置 — 先查 monorepo，再查 hub 本地（npm installed） */
+function resolveRuntimeProject(): string {
+  const mono = path.join(
+    MONOREPO_ROOT,
+    "packages",
+    "runtime",
+    "default.project.json",
+  );
+  if (fs.existsSync(mono)) return mono;
+
+  const local = path.join(HUB_ROOT, "runtime", "default.project.json");
+  if (fs.existsSync(local)) return local;
+
+  throw new Error("找不到 runtime 项目配置");
+}
+
+/** 查找 Lune 注入脚本 — 先查 monorepo，再查 hub 本地 */
+function resolveInjectScript(): string {
+  const mono = path.join(MONOREPO_ROOT, "scripts", "inject-runtime.luau");
+  if (fs.existsSync(mono)) return mono;
+
+  const local = path.join(HUB_ROOT, "scripts", "inject-runtime.luau");
+  if (fs.existsSync(local)) return local;
+
+  throw new Error("找不到注入脚本");
+}
 
 /**
  * 构建单个插件为 .rbxm（如果有 default.project.json）
@@ -49,11 +73,11 @@ async function buildPluginRbxm(
 export async function injectRuntime(placePath: string): Promise<void> {
   const { execFileSync } = await import("child_process");
 
+  const RUNTIME_PROJECT = resolveRuntimeProject();
+  const INJECT_SCRIPT = resolveInjectScript();
+
   // 1. Build runtime .rbxm
-  const runtimeRbxm = path.join(
-    os.tmpdir(),
-    `hub-runtime-${Date.now()}.rbxm`,
-  );
+  const runtimeRbxm = path.join(os.tmpdir(), `hub-runtime-${Date.now()}.rbxm`);
 
   try {
     execFileSync("rojo", ["build", RUNTIME_PROJECT, "--output", runtimeRbxm], {

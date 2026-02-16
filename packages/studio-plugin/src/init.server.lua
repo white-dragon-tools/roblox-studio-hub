@@ -73,13 +73,22 @@ idLabel.Text = "ID: -"
 idLabel.LayoutOrder = 2
 idLabel.Parent = frame
 
+local gameStateLabel = Instance.new("TextLabel")
+gameStateLabel.Size = UDim2.new(1, 0, 0, 20)
+gameStateLabel.BackgroundTransparency = 1
+gameStateLabel.TextColor3 = Color3.fromRGB(180, 180, 255)
+gameStateLabel.TextXAlignment = Enum.TextXAlignment.Left
+gameStateLabel.Text = "Mode: Edit"
+gameStateLabel.LayoutOrder = 3
+gameStateLabel.Parent = frame
+
 local portLabel = Instance.new("TextLabel")
 portLabel.Size = UDim2.new(1, 0, 0, 20)
 portLabel.BackgroundTransparency = 1
 portLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 portLabel.TextXAlignment = Enum.TextXAlignment.Left
 portLabel.Text = "Port:"
-portLabel.LayoutOrder = 3
+portLabel.LayoutOrder = 4
 portLabel.Parent = frame
 
 local portInput = Instance.new("TextBox")
@@ -88,7 +97,7 @@ portInput.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 portInput.TextColor3 = Color3.fromRGB(255, 255, 255)
 portInput.PlaceholderText = tostring(DEFAULT_PORT)
 portInput.Text = tostring(DEFAULT_PORT)
-portInput.LayoutOrder = 4
+portInput.LayoutOrder = 5
 portInput.Parent = frame
 
 local connectButton = Instance.new("TextButton")
@@ -96,14 +105,14 @@ connectButton.Size = UDim2.new(1, 0, 0, 30)
 connectButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
 connectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 connectButton.Text = "Connect"
-connectButton.LayoutOrder = 5
+connectButton.LayoutOrder = 6
 connectButton.Parent = frame
 
 -- Debug mode checkbox
 local debugFrame = Instance.new("Frame")
 debugFrame.Size = UDim2.new(1, 0, 0, 20)
 debugFrame.BackgroundTransparency = 1
-debugFrame.LayoutOrder = 6
+debugFrame.LayoutOrder = 7
 debugFrame.Parent = frame
 
 local debugCheckbox = Instance.new("TextButton")
@@ -130,6 +139,16 @@ end
 
 local function updateId(id: string?)
 	idLabel.Text = "ID: " .. (id or "-")
+end
+
+local function updateGameState(state: string)
+	if state == "edit" then
+		gameStateLabel.Text = "Mode: Edit"
+		gameStateLabel.TextColor3 = Color3.fromRGB(180, 180, 255)
+	else
+		gameStateLabel.Text = "Mode: Play"
+		gameStateLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+	end
 end
 
 local function updateDebugCheckbox()
@@ -161,7 +180,7 @@ if not Runtime then
 	hintLabel.TextXAlignment = Enum.TextXAlignment.Left
 	hintLabel.TextWrapped = true
 	hintLabel.Text = "Use 'roblox-studio-hub open <place>' to inject Runtime."
-	hintLabel.LayoutOrder = 7
+	hintLabel.LayoutOrder = 8
 	hintLabel.Parent = frame
 
 	toggleButton.Click:Connect(function()
@@ -188,6 +207,10 @@ Runtime.onDisconnected = function()
 	connectButton.Text = "Connect"
 end
 
+Runtime.onGameStateChange = function(state: string)
+	updateGameState(state)
+end
+
 -- Debug mode sync
 debugCheckbox.MouseButton1Click:Connect(function()
 	debugMode = not debugMode
@@ -197,7 +220,7 @@ end)
 
 -- Connect/Disconnect
 connectButton.MouseButton1Click:Connect(function()
-	if isConnected or Runtime._pollEnabled then
+	if isConnected or Runtime._wsEnabled then
 		Runtime:disconnect()
 	else
 		local port = tonumber(portInput.Text) or DEFAULT_PORT

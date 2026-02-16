@@ -2,13 +2,15 @@ import type {
   StudioInstance,
   StudioInfo,
   LogEntry,
-  MethodDescriptor,
+  GameState,
 } from "../types.js";
+import type { WebSocket } from "ws";
 
 const MAX_LOGS = 500;
 
 export class StudioManager {
   private studios: Map<string, StudioInstance> = new Map();
+  private wsMap: Map<string, WebSocket> = new Map();
 
   // 通过 placeId 查找（云场景）
   private placeIdIndex: Map<number, string> = new Map();
@@ -56,6 +58,7 @@ export class StudioManager {
       lastHeartbeat: Date.now(),
       logs: [],
       methods: info.methods || [],
+      gameState: "edit",
     };
 
     this.studios.set(id, instance);
@@ -90,6 +93,7 @@ export class StudioManager {
     }
 
     this.studios.delete(id);
+    this.wsMap.delete(id);
     console.log(`[StudioManager] Unregistered: ${id}`);
     return instance;
   }
@@ -165,6 +169,37 @@ export class StudioManager {
     const studio = this.studios.get(studioId);
     if (!studio) return [];
     return studio.logs.slice(-limit);
+  }
+
+  /**
+   * 更新 gameState
+   */
+  updateGameState(studioId: string, state: GameState): boolean {
+    const studio = this.studios.get(studioId);
+    if (!studio) return false;
+    studio.gameState = state;
+    return true;
+  }
+
+  /**
+   * 绑定 WebSocket 连接
+   */
+  setWs(studioId: string, ws: WebSocket): void {
+    this.wsMap.set(studioId, ws);
+  }
+
+  /**
+   * 获取 WebSocket 连接
+   */
+  getWs(studioId: string): WebSocket | undefined {
+    return this.wsMap.get(studioId);
+  }
+
+  /**
+   * 是否有 WebSocket 连接
+   */
+  hasWs(studioId: string): boolean {
+    return this.wsMap.has(studioId);
   }
 }
 

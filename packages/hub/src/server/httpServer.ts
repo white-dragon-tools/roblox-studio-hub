@@ -22,6 +22,11 @@ import {
 } from "../utils/fileResolver.js";
 import { discoverPluginTools } from "../hub/pluginDiscovery.js";
 import type { PluginToolDef } from "../hub/pluginTypes.js";
+import { createWsServer } from "./wsServer.js";
+import {
+  serializeDownstreamMessage,
+  isMethodAllowedForState,
+} from "./wsProtocol.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,12 +150,6 @@ export function createApp(options: AppOptions): {
   }> {
     return new Promise((resolve) => {
       const id = uuidv4();
-      const command: PendingCommand = {
-        id,
-        type: method,
-        params,
-        createdAt: Date.now(),
-      };
 
       const timer = setTimeout(() => {
         const pending = pendingResults.get(id);
@@ -173,7 +172,26 @@ export function createApp(options: AppOptions): {
         runtimeLogs: [],
       });
 
-      sendCommandToStudio(studioId, command);
+      // WS 优先，HTTP 降级
+      const ws = studioManager.getWs(studioId);
+      if (ws && ws.readyState === 1) {
+        ws.send(
+          serializeDownstreamMessage({
+            type: "command",
+            id,
+            method,
+            params: (params ?? {}) as Record<string, unknown>,
+          }),
+        );
+      } else {
+        const command: PendingCommand = {
+          id,
+          type: method,
+          params,
+          createdAt: Date.now(),
+        };
+        sendCommandToStudio(studioId, command);
+      }
     });
   }
 
@@ -346,8 +364,17 @@ export function createApp(options: AppOptions): {
       return;
     }
 
-    if (!studio.methods.some((m) => m.name === method)) {
+    const methodDescriptor = studio.methods.find((m) => m.name === method);
+    if (!methodDescriptor) {
       res.status(400).json({ error: `Method not available: ${method}` });
+      return;
+    }
+
+    // context 校验：method.context 必须匹配 studio.gameState
+    if (!isMethodAllowedForState(methodDescriptor, studio.gameState)) {
+      res.status(400).json({
+        error: `Method "${method}" requires context "${methodDescriptor.context}", but studio is in "${studio.gameState}" state`,
+      });
       return;
     }
 
@@ -462,19 +489,28 @@ export function createHttpServer(port: number = 8080) {
 
   const server = createServer(app);
 
+  // WebSocket server 挂载到 HTTP server
+  createWsServer({
+    httpServer: server,
+    studioManager: defaultStudioManager,
+    pendingResults: state.pendingResults,
+  });
+
   server.listen(port, () => {
     console.log(`🐉 Roblox Studio Hub running at http://localhost:${port}`);
     console.log(`   Studio API:`);
-    console.log(`   - POST /api/studio/poll`);
-    console.log(`   - POST /api/studio/result`);
+    console.log(`   - POST /api/studio/poll (HTTP)`);
+    console.log(`   - WebSocket ws://localhost:${port}`);
   });
 
-  // 定期清理超时的 Studio
+  // 定期清理超时的 HTTP Studio（WS Studio 由 WS close 事件清理）
   // 短轮询间隔 2s，35s 无心跳视为离线
   setInterval(() => {
     const now = Date.now();
     const studios = defaultStudioManager.getAll();
     for (const studio of studios) {
+      // 有 WS 连接的 Studio 不受 HTTP 心跳超时影响
+      if (defaultStudioManager.hasWs(studio.id)) continue;
       if (now - studio.lastHeartbeat > 35000) {
         console.log(`[HTTP] Studio timeout, removing: ${studio.id}`);
         defaultStudioManager.unregisterById(studio.id);

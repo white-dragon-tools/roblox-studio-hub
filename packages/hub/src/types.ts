@@ -7,7 +7,11 @@ export interface MethodDescriptor {
     properties: Record<string, unknown>;
     required?: string[];
   };
+  context?: "edit" | "play" | "both";
 }
+
+// Studio 的游戏状态
+export type GameState = "edit" | "play";
 
 // Studio 信息（从插件注册时获取）
 export interface StudioInfo {
@@ -36,6 +40,7 @@ export interface StudioInstance {
   lastHeartbeat: number; // 最后心跳时间戳
   logs: LogEntry[]; // 日志历史
   methods: MethodDescriptor[]; // Runtime 上报的可用方法
+  gameState: GameState; // 当前游戏状态
 }
 
 // 日志条目

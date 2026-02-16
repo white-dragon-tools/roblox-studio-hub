@@ -3,7 +3,11 @@ dist/
 *.rbxl
 *.rbxl.lock
 *.rbxlx
+*.rbxm
 .factory/
 .DS_STORE
 .gulp-metadata.json
 .local-hub/
+
+# Keep test fixture
+!tests/game.rbxl
