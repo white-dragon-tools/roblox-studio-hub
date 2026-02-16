@@ -27,7 +27,7 @@ local MockTransport = require("../lib/mock-transport")
 MockTransport.install()
 
 local MockRoblox = require("../lib/mock-roblox")
-local game = MockRoblox.create({
+local game, _controller = MockRoblox.create({
 	placeName = "ConnectTestPlace",
 	localPath = "/tmp/connect-test.rbxl",
 })

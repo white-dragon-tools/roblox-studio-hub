@@ -317,6 +317,7 @@ export function createApp(options: AppOptions): {
       placeName: studio.placeName,
       gameId: studio.gameId,
       userId: studio.userId,
+      gameState: studio.gameState,
       connectedAt: studio.connectedAt.toISOString(),
       clientCount: 0,
     });

@@ -3,6 +3,8 @@
 
 	Simulates the minimal Roblox Studio environment needed by Runtime init.lua.
 	Creates game, injects Services and methods.
+
+	Returns gameProxy + controller for dynamic state changes (e.g. play/edit).
 ]]
 
 local roblox = require("@lune/roblox")
@@ -13,14 +15,23 @@ local Instance = roblox.Instance
 local MockRoblox = {}
 
 export type MockGame = any
+export type MockController = {
+	setGameState: (self: MockController, state: "edit" | "play") -> (),
+}
+
+-- Shared mutable state (implementMethod is global per class)
+local _isEdit = true
 
 function MockRoblox.create(options: {
 	placeName: string?,
 	placeId: number?,
 	gameId: number?,
 	localPath: string?,
-}?): MockGame
+}?): (MockGame, MockController)
 	local opts = options or {}
+
+	-- Reset state
+	_isEdit = true
 
 	-- Create DataModel (game)
 	local game = Instance.new("DataModel")
@@ -59,13 +70,13 @@ function MockRoblox.create(options: {
 		return serde.decode("json", json)
 	end)
 
-	-- Implement RunService:IsEdit()
+	-- Implement RunService — reads from shared mutable _isEdit
 	roblox.implementMethod("RunService", "IsEdit", function(_self: any)
-		return true
+		return _isEdit
 	end)
 
 	roblox.implementMethod("RunService", "IsRunning", function(_self: any)
-		return false
+		return not _isEdit
 	end)
 
 	-- Implement StudioService:GetUserId()
@@ -102,7 +113,14 @@ function MockRoblox.create(options: {
 		end,
 	})
 
-	return gameProxy
+	-- Controller for dynamic state changes
+	local controller = {}
+
+	function controller:setGameState(state: "edit" | "play")
+		_isEdit = (state == "edit")
+	end
+
+	return gameProxy, controller
 end
 
 return MockRoblox

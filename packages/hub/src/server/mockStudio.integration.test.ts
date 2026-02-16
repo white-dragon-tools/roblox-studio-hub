@@ -131,4 +131,66 @@ describe("Mock Studio Integration", () => {
 
     expect(luneStdout).toContain("PASS");
   }, 20000);
+
+  it("Mock Studio gameState 切换 (edit → play → edit)", async () => {
+    const scenarioPath = path.join(
+      MOCK_STUDIO_DIR,
+      "test-scenarios",
+      "test-gamestate",
+    );
+
+    const luneProcess = execFile("lune", ["run", scenarioPath, String(port)], {
+      timeout: 20000,
+      cwd: MONOREPO_ROOT,
+    });
+
+    let luneStdout = "";
+    let luneStderr = "";
+    luneProcess.stdout?.on("data", (d: Buffer) => {
+      luneStdout += d.toString();
+    });
+    luneProcess.stderr?.on("data", (d: Buffer) => {
+      luneStderr += d.toString();
+    });
+
+    // Wait for mock studio to connect
+    let studio;
+    for (let i = 0; i < 50; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      const studios = studioManager.getAll();
+      studio = studios.find((s) => s.placeName === "GameStateTestPlace");
+      if (studio) break;
+    }
+
+    expect(studio).toBeDefined();
+
+    if (studio) {
+      // Initial state should be edit
+      expect(studio.gameState).toBe("edit");
+
+      // Wait for play state change (Lune simulates F5 after connect)
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        if (studio.gameState === "play") break;
+      }
+      expect(studio.gameState).toBe("play");
+
+      // Wait for edit state change (Lune simulates Stop after play)
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        if (studio.gameState === "edit") break;
+      }
+      expect(studio.gameState).toBe("edit");
+    }
+
+    // Wait for lune process to complete
+    await new Promise<number>((resolve) => {
+      luneProcess.on("exit", (code) => resolve(code ?? 1));
+    });
+
+    console.log("[Lune stdout]", luneStdout);
+    if (luneStderr) console.log("[Lune stderr]", luneStderr);
+
+    expect(luneStdout).toContain("PASS");
+  }, 25000);
 });
