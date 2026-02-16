@@ -27,7 +27,9 @@
     "prepack": "npm run build",
     "start": "node dist/index.js serve",
     "dev": "tsx src/index.ts serve",
-    "rojo:build:plugin": "rojo build studio-plugin -o dist/StudioHubPlugin.rbxm"
+    "rojo:build:plugin": "rojo build studio-plugin -o dist/StudioHubPlugin.rbxm",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "roblox",
@@ -50,9 +52,12 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.10.0",
+    "@types/supertest": "^6.0.3",
     "@types/uuid": "^9.0.7",
     "@types/ws": "^8.5.10",
+    "supertest": "^7.2.2",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
   }
 }

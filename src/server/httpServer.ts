@@ -4,7 +4,8 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
-import { studioManager } from "../hub/StudioManager.js";
+import { studioManager as defaultStudioManager } from "../hub/StudioManager.js";
+import type { StudioManager } from "../hub/StudioManager.js";
 import {
   isInstalledAsService,
   isServiceRunning,
@@ -20,6 +21,7 @@ import {
   findToolDescriptor,
 } from "../utils/fileResolver.js";
 import { discoverPluginTools } from "../hub/pluginDiscovery.js";
+import type { PluginToolDef } from "../hub/pluginTypes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,13 +32,12 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
 const VERSION = packageJson.version;
 
 // 待执行的命令队列（studioId -> commands）
-interface PendingCommand {
+export interface PendingCommand {
   id: string;
   type: string;
   params: unknown;
   createdAt: number;
 }
-const pendingCommands: Map<string, PendingCommand[]> = new Map();
 
 // 等待结果的请求（requestId -> resolver）
 interface PendingResult {
@@ -44,147 +45,143 @@ interface PendingResult {
   timer: NodeJS.Timeout;
   runtimeLogs: Array<{ timestamp: number; level: string; message: string }>;
 }
-const pendingResults: Map<string, PendingResult> = new Map();
 
-// 等待轮询的 Studio 请求（studioId -> response）
-const waitingPolls: Map<string, Response> = new Map();
-
-// UI 事件队列
+// UI 事件
 interface UIEvent {
   type: string;
   data: unknown;
   timestamp: number;
 }
-const uiEvents: UIEvent[] = [];
-const MAX_UI_EVENTS = 100;
 
-// 等待轮询的 UI 请求
-const waitingUIPolls: Set<Response> = new Set();
-
-// 添加 UI 事件
-function addUIEvent(type: string, data: unknown): void {
-  const event: UIEvent = { type, data, timestamp: Date.now() };
-  uiEvents.push(event);
-  while (uiEvents.length > MAX_UI_EVENTS) {
-    uiEvents.shift();
-  }
-
-  // 通知所有等待的 UI 轮询
-  for (const res of waitingUIPolls) {
-    try {
-      res.json({ events: [event] });
-    } catch (e) {
-      // ignore
-    }
-  }
-  waitingUIPolls.clear();
+export interface AppOptions {
+  studioManager: StudioManager;
+  pluginTools?: ReadonlyArray<PluginToolDef>;
+  staticDir?: string;
 }
 
-// 向 Studio 发送命令
-function sendCommandToStudio(
-  studioId: string,
-  command: PendingCommand,
-): boolean {
-  // 检查是否有等待的轮询请求
-  const waitingRes = waitingPolls.get(studioId);
-  if (waitingRes) {
-    try {
-      waitingRes.json({ commands: [command] });
-      waitingPolls.delete(studioId);
-      return true;
-    } catch (e) {
-      waitingPolls.delete(studioId);
-    }
-  }
-
-  // 否则加入队列
-  let queue = pendingCommands.get(studioId);
-  if (!queue) {
-    queue = [];
-    pendingCommands.set(studioId, queue);
-  }
-  queue.push(command);
-  return true;
+export interface AppState {
+  pendingCommands: Map<string, PendingCommand[]>;
+  pendingResults: Map<string, PendingResult>;
 }
 
-// 统一 ID 解析逻辑
-function resolveStudio(id: string): StudioInstance | undefined {
-  if (id.startsWith("place:"))
-    return studioManager.getByPlaceId(parseInt(id.slice(6), 10));
-  if (id.startsWith("local:")) return studioManager.getByPlaceName(id.slice(6));
-  if (id.startsWith("path:")) return studioManager.getByLocalPath(id.slice(5));
-  const placeId = parseInt(id, 10);
-  if (!isNaN(placeId)) return studioManager.getByPlaceId(placeId);
-  return studioManager.getByPlaceName(id);
-}
+/**
+ * 创建 Express app（不启动监听）。
+ * 可注入依赖，便于测试。
+ */
+export function createApp(options: AppOptions): {
+  app: express.Express;
+  state: AppState;
+} {
+  const { studioManager, pluginTools = [], staticDir } = options;
 
-// 通用 Studio 调用函数
-function callStudio(
-  studioId: string,
-  method: string,
-  params: unknown,
-  timeout = 30,
-): Promise<{
-  success: boolean;
-  result?: unknown;
-  logs?: unknown;
-  runtimeLogs?: unknown;
-  errors?: unknown;
-  error?: string;
-}> {
-  return new Promise((resolve) => {
-    const id = uuidv4();
-    const command: PendingCommand = {
-      id,
-      type: method,
-      params,
-      createdAt: Date.now(),
-    };
-
-    // 设置超时
-    const timer = setTimeout(() => {
-      const pending = pendingResults.get(id);
-      if (pending) {
-        resolve({
-          success: false,
-          error: "Execution timeout",
-          runtimeLogs: pending.runtimeLogs,
-        });
-        pendingResults.delete(id);
-      }
-    }, timeout * 1000);
-
-    // 注册等待结果
-    pendingResults.set(id, {
-      resolve: (result) =>
-        resolve(
-          result as typeof resolve extends (r: infer R) => void ? R : never,
-        ),
-      timer,
-      runtimeLogs: [],
-    });
-
-    // 发送命令
-    sendCommandToStudio(studioId, command);
-  });
-}
-
-export function createHttpServer(port: number = 8080) {
   const app = express();
-  const server = createServer(app);
-
-  // 中间件
   app.use(express.json());
 
-  // 静态文件（Web UI）
-  app.use(express.static(path.join(__dirname, "../../public")));
+  if (staticDir) {
+    app.use(express.static(staticDir));
+  }
+
+  // === Internal state ===
+  const pendingCommands: Map<string, PendingCommand[]> = new Map();
+  const pendingResults: Map<string, PendingResult> = new Map();
+  const uiEvents: UIEvent[] = [];
+  const MAX_UI_EVENTS = 100;
+  const waitingUIPolls: Set<Response> = new Set();
+
+  function addUIEvent(type: string, data: unknown): void {
+    const event: UIEvent = { type, data, timestamp: Date.now() };
+    uiEvents.push(event);
+    while (uiEvents.length > MAX_UI_EVENTS) {
+      uiEvents.shift();
+    }
+
+    for (const res of waitingUIPolls) {
+      try {
+        res.json({ events: [event] });
+      } catch (e) {
+        // ignore
+      }
+    }
+    waitingUIPolls.clear();
+  }
+
+  function sendCommandToStudio(
+    studioId: string,
+    command: PendingCommand,
+  ): boolean {
+    let queue = pendingCommands.get(studioId);
+    if (!queue) {
+      queue = [];
+      pendingCommands.set(studioId, queue);
+    }
+    queue.push(command);
+    return true;
+  }
+
+  function resolveStudio(id: string): StudioInstance | undefined {
+    if (id.startsWith("place:"))
+      return studioManager.getByPlaceId(parseInt(id.slice(6), 10));
+    if (id.startsWith("local:"))
+      return studioManager.getByPlaceName(id.slice(6));
+    if (id.startsWith("path:"))
+      return studioManager.getByLocalPath(id.slice(5));
+    const placeId = parseInt(id, 10);
+    if (!isNaN(placeId)) return studioManager.getByPlaceId(placeId);
+    return studioManager.getByPlaceName(id);
+  }
+
+  function callStudio(
+    studioId: string,
+    method: string,
+    params: unknown,
+    timeout = 30,
+  ): Promise<{
+    success: boolean;
+    result?: unknown;
+    logs?: unknown;
+    runtimeLogs?: unknown;
+    errors?: unknown;
+    error?: string;
+  }> {
+    return new Promise((resolve) => {
+      const id = uuidv4();
+      const command: PendingCommand = {
+        id,
+        type: method,
+        params,
+        createdAt: Date.now(),
+      };
+
+      const timer = setTimeout(() => {
+        const pending = pendingResults.get(id);
+        if (pending) {
+          resolve({
+            success: false,
+            error: "Execution timeout",
+            runtimeLogs: pending.runtimeLogs,
+          });
+          pendingResults.delete(id);
+        }
+      }, timeout * 1000);
+
+      pendingResults.set(id, {
+        resolve: (result) =>
+          resolve(
+            result as typeof resolve extends (r: infer R) => void ? R : never,
+          ),
+        timer,
+        runtimeLogs: [],
+      });
+
+      sendCommandToStudio(studioId, command);
+    });
+  }
 
   // ==================== Studio API ====================
 
-  // Studio 长轮询获取命令（同时作为注册/心跳）
+  // Studio 短轮询获取命令（同时作为注册/心跳）
   app.post("/api/studio/poll", (req: Request, res: Response) => {
     const studioInfo = req.body.studioInfo as StudioInfo | undefined;
-    const timeout = (req.body.timeout as number) || 30;
 
     if (!studioInfo) {
       res.status(400).json({ error: "studioInfo is required" });
@@ -206,23 +203,6 @@ export function createHttpServer(port: number = 8080) {
       studioId = `local:${studioInfo.placeName}`;
     }
 
-    // 检查是否有旧的轮询请求（同一个 Studio 的新请求会踢掉旧请求）
-    const existingPoll = waitingPolls.get(studioId);
-    if (existingPoll && existingPoll !== res) {
-      console.log(`[HTTP] New poll replacing old poll: ${studioId}`);
-      try {
-        existingPoll.json({
-          studioId,
-          commands: [
-            { type: "disconnect", reason: "Replaced by new connection" },
-          ],
-        });
-      } catch (e) {
-        // ignore
-      }
-      waitingPolls.delete(studioId);
-    }
-
     // 注册或更新 Studio
     let studio: StudioInstance | undefined = studioManager.get(studioId);
 
@@ -232,7 +212,6 @@ export function createHttpServer(port: number = 8080) {
         studio = newStudio;
         console.log(`[HTTP] Studio registered via poll: ${studioId}`);
 
-        // 通知 UI
         addUIEvent("studio_connected", {
           studio: {
             id: studio.id,
@@ -249,7 +228,6 @@ export function createHttpServer(port: number = 8080) {
         });
       }
     } else {
-      // 更新心跳（含 methods 更新）
       studioManager.heartbeat(studioId, studioInfo);
     }
 
@@ -261,9 +239,7 @@ export function createHttpServer(port: number = 8080) {
       return;
     }
 
-    // 短轮询模式：立即响应，Runtime 控制轮询间隔
-    // Roblox Studio HttpService 不支持长保持连接
-    waitingPolls.set(studioId, res);
+    // 短轮询：无待处理命令，立即返回空列表
     res.json({ studioId, commands: [] });
   });
 
@@ -352,9 +328,6 @@ export function createHttpServer(port: number = 8080) {
   });
 
   // API: 调用 Studio 方法（通用入口）
-  // 自动解析 x-file 标记的 file:// URI 参数
-  const pluginTools = discoverPluginTools();
-
   app.post("/api/studios/:id/call", async (req: Request, res: Response) => {
     const {
       method,
@@ -417,17 +390,14 @@ export function createHttpServer(port: number = 8080) {
     const since = parseInt(req.query.since as string, 10) || 0;
     const timeout = parseInt(req.query.timeout as string, 10) || 30;
 
-    // 检查是否有新事件
     const newEvents = uiEvents.filter((e) => e.timestamp > since);
     if (newEvents.length > 0) {
       res.json({ events: newEvents });
       return;
     }
 
-    // 等待新事件
     waitingUIPolls.add(res);
 
-    // 设置超时
     const timer = setTimeout(() => {
       if (waitingUIPolls.has(res)) {
         waitingUIPolls.delete(res);
@@ -439,7 +409,6 @@ export function createHttpServer(port: number = 8080) {
       }
     }, timeout * 1000);
 
-    // 请求关闭时清理
     req.on("close", () => {
       clearTimeout(timer);
       waitingUIPolls.delete(res);
@@ -472,7 +441,6 @@ export function createHttpServer(port: number = 8080) {
 
     res.json({
       version: VERSION,
-      port,
       uptime: process.uptime(),
       installedAsService: installed,
       serviceRunning,
@@ -482,7 +450,18 @@ export function createHttpServer(port: number = 8080) {
     });
   });
 
-  // 启动服务器
+  return { app, state: { pendingCommands, pendingResults } };
+}
+
+export function createHttpServer(port: number = 8080) {
+  const { app, state } = createApp({
+    studioManager: defaultStudioManager,
+    pluginTools: discoverPluginTools(),
+    staticDir: path.join(__dirname, "../../public"),
+  });
+
+  const server = createServer(app);
+
   server.listen(port, () => {
     console.log(`🐉 Roblox Studio Hub running at http://localhost:${port}`);
     console.log(`   Studio API:`);
@@ -491,17 +470,15 @@ export function createHttpServer(port: number = 8080) {
   });
 
   // 定期清理超时的 Studio
-  // 超时阈值 = poll 超时(10s) + 完整周期缓冲(10s) + 余量(15s) = 35s
+  // 短轮询间隔 2s，35s 无心跳视为离线
   setInterval(() => {
     const now = Date.now();
-    const studios = studioManager.getAll();
+    const studios = defaultStudioManager.getAll();
     for (const studio of studios) {
       if (now - studio.lastHeartbeat > 35000) {
         console.log(`[HTTP] Studio timeout, removing: ${studio.id}`);
-        studioManager.unregisterById(studio.id);
-        pendingCommands.delete(studio.id);
-        waitingPolls.delete(studio.id);
-        addUIEvent("studio_disconnected", { studioId: studio.id });
+        defaultStudioManager.unregisterById(studio.id);
+        state.pendingCommands.delete(studio.id);
       }
     }
   }, 10000);

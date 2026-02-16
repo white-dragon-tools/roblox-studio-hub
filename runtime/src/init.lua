@@ -240,6 +240,15 @@ function Runtime:_pollLoop()
 
 		if not ok then
 			warn("[HubRuntime] Poll loop error:", err)
+			if self.isConnected then
+				self.isConnected = false
+				if self.onStatusChange then
+					self.onStatusChange("Disconnected", Color3.fromRGB(200, 200, 200))
+				end
+				if self.onDisconnected then
+					self.onDisconnected()
+				end
+			end
 		end
 
 		-- 短轮询间隔
