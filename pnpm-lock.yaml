@@ -17,9 +17,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
-      '@white-dragon-tools/roblox-studio-physical-operation':
-        specifier: ^0.6.2
-        version: 0.6.2(zod@4.3.6)
       express:
         specifier: ^4.18.2
         version: 4.22.1
@@ -662,11 +659,6 @@ packages:
 
   '@vitest/utils@4.0.18':
     resolution: {integrity: sha512-msMRKLMVLWygpK3u2Hybgi4MNjcYJvwTb0Ru09+fOyCXIgT5raYP041DRRdiJiI3k/2U6SEbAETB3YtBrUkCFA==}
-
-  '@white-dragon-tools/roblox-studio-physical-operation@0.6.2':
-    resolution: {integrity: sha512-WRuDuuI2X6L6c+8vHm7ca6bwMubEXfBVxiTL3TEB7mjBV6s/RakfOppiCMBGK6RtPC39cIKJdork4DOx0MUV0w==, tarball: https://npm.pkg.github.com/download/@white-dragon-tools/roblox-studio-physical-operation/0.6.2/f940b5f3f033abfbd50ce4a92b44444528d3ec84}
-    engines: {node: '>=18.0.0'}
-    hasBin: true
 
   '@white-dragon-tools/roblox-studio-physical-operation@0.7.3':
     resolution: {integrity: sha512-JSV5/tkapjvelB1irRXRzbw1fR0ZRZOqmvreAcNU9WUEBslECN3r7kuUqqohumcM5ws00g+vx4WLdEGDMCqQ5g==, tarball: https://npm.pkg.github.com/download/@white-dragon-tools/roblox-studio-physical-operation/0.7.3/d7a529408ddc42cb254f3e433e6fb8d239d79251}
@@ -2054,17 +2046,6 @@ snapshots:
     dependencies:
       '@vitest/pretty-format': 4.0.18
       tinyrainbow: 3.0.3
-
-  '@white-dragon-tools/roblox-studio-physical-operation@0.6.2(zod@4.3.6)':
-    dependencies:
-      '@modelcontextprotocol/sdk': 1.26.0(zod@4.3.6)
-      koffi: 2.15.1
-      opencv-wasm: 4.3.0-10
-      sharp: 0.33.5
-    transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - supports-color
-      - zod
 
   '@white-dragon-tools/roblox-studio-physical-operation@0.7.3(zod@4.3.6)':
     dependencies:
