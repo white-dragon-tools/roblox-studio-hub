@@ -1,0 +1,30 @@
+{
+  "name": "game-control",
+  "version": "1.0.0",
+  "description": "Start and stop the game in Roblox Studio. Hub-side operations using physical automation.",
+  "author": "white-dragon-tools",
+  "tools": [
+    {
+      "name": "startGame",
+      "description": "Start the game (like F5). Studio enters play state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["play", "run"],
+            "description": "play (client+server, default) or run (server only, like F8)"
+          }
+        }
+      }
+    },
+    {
+      "name": "stopGame",
+      "description": "Stop the game (like Shift+F5). Studio returns to edit state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

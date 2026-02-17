@@ -21,6 +21,7 @@ import {
   findToolDescriptor,
 } from "../utils/fileResolver.js";
 import { discoverPluginTools } from "../hub/pluginDiscovery.js";
+import { getPluginsDir } from "../hub/hubPaths.js";
 import type { PluginToolDef } from "../hub/pluginTypes.js";
 import { SubscriptionManager } from "../hub/subscriptionManager.js";
 import { createWsServer } from "./wsServer.js";
@@ -28,6 +29,8 @@ import {
   serializeDownstreamMessage,
   isMethodAllowedForState,
 } from "./wsProtocol.js";
+import { isHubMethod, executeHubMethod } from "../hub/hubMethods.js";
+import { mountPluginWebRoutes } from "./pluginWebServer.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +66,7 @@ export interface AppOptions {
   studioManager: StudioManager;
   pluginTools?: ReadonlyArray<PluginToolDef>;
   staticDir?: string;
+  pluginsDir?: string;
   subscriptionManager?: SubscriptionManager;
 }
 
@@ -80,13 +84,21 @@ export function createApp(options: AppOptions): {
   app: express.Express;
   state: AppState;
 } {
-  const { studioManager, pluginTools = [], staticDir } = options;
+  const { studioManager, pluginTools = [], staticDir, pluginsDir } = options;
 
   const app = express();
   app.use(express.json());
 
   if (staticDir) {
     app.use(express.static(staticDir));
+  }
+
+  // Plugin Web UI 静态服务
+  if (pluginsDir) {
+    const pluginWebInfos = mountPluginWebRoutes(app, pluginsDir);
+    for (const info of pluginWebInfos) {
+      console.log(`[HTTP] Plugin Web UI mounted: ${info.mountPath}`);
+    }
   }
 
   // === Internal state ===
@@ -386,6 +398,30 @@ export function createApp(options: AppOptions): {
       return;
     }
 
+    // Hub-side 方法：不转发到 Studio，由 Hub 直接处理
+    if (isHubMethod(method)) {
+      // context 校验（startGame → edit, stopGame → play）
+      const requiredContext = method === "startGame" ? "edit" : "play";
+      if (studio.gameState !== requiredContext) {
+        res.status(400).json({
+          error: `Method "${method}" requires context "${requiredContext}", but studio is in "${studio.gameState}" state`,
+        });
+        return;
+      }
+
+      try {
+        const result = await executeHubMethod(
+          method,
+          (params ?? {}) as Record<string, unknown>,
+          studio,
+        );
+        res.json(result);
+      } catch (e) {
+        res.status(500).json({ error: (e as Error).message });
+      }
+      return;
+    }
+
     const methodDescriptor = studio.methods.find((m) => m.name === method);
     if (!methodDescriptor) {
       res.status(400).json({ error: `Method not available: ${method}` });
@@ -527,8 +563,11 @@ export function createApp(options: AppOptions): {
         gameId: s.gameId,
         localPath: s.localPath,
         connectedAt: s.connectedAt.toISOString(),
+        gameState: s.gameState,
+        methods: s.methods,
         clientCount: 0,
       })),
+      pluginTools,
     });
   });
 
@@ -559,6 +598,7 @@ export function createHttpServer(port: number = 8080) {
     studioManager: defaultStudioManager,
     pluginTools: discoverPluginTools(),
     staticDir: path.join(__dirname, "../../public"),
+    pluginsDir: getPluginsDir(),
   });
 
   const server = createServer(app);

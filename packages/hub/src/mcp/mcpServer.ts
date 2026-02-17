@@ -7,6 +7,8 @@ import {
 import { discoverPluginTools } from "../hub/pluginDiscovery.js";
 import type { PluginToolDef } from "../hub/pluginTypes.js";
 import { selectStudio, callStudioMethod } from "./studioSelector.js";
+import { loadHubConfig, checkDependencies } from "../hub/hubConfig.js";
+import { getPluginsDir } from "../hub/hubPaths.js";
 
 /**
  * 将 plugin.json 的 tool 描述符转换为 MCP Tool 格式
@@ -101,9 +103,7 @@ export async function startMcpServer(
       };
     } catch (err) {
       return {
-        content: [
-          { type: "text" as const, text: (err as Error).message },
-        ],
+        content: [{ type: "text" as const, text: (err as Error).message }],
         isError: true,
       };
     }
@@ -116,6 +116,18 @@ export async function startMcpServer(
   console.error(
     `[MCP] Roblox Studio Hub MCP Server started (${pluginTools.length} tools)`,
   );
+
+  // 检查项目级 hub.json 依赖
+  const hubConfig = loadHubConfig(process.cwd());
+  if (hubConfig && hubConfig.plugins.dependencies.length > 0) {
+    const { missing } = checkDependencies(
+      hubConfig.plugins.dependencies,
+      getPluginsDir(),
+    );
+    if (missing.length > 0) {
+      console.error(`[MCP] ⚠️  hub.json 依赖未安装: ${missing.join(", ")}`);
+    }
+  }
 
   return server;
 }

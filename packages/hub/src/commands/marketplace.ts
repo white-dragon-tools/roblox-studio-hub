@@ -73,20 +73,36 @@ async function syncMarketplaceRepo(ownerRepo: string): Promise<string> {
 }
 
 /**
- * 读取 marketplace 仓库的 marketplace.json
+ * marketplace.json 查找结果
  */
-function readMarketplaceManifest(
-  repoDir: string,
-): MarketplaceManifest | null {
-  const manifestPath = path.join(repoDir, "marketplace.json");
-  if (!fs.existsSync(manifestPath)) return null;
+interface ManifestResult {
+  readonly manifest: MarketplaceManifest;
+  readonly manifestDir: string;
+}
 
-  try {
-    const raw = fs.readFileSync(manifestPath, "utf-8");
-    return JSON.parse(raw) as MarketplaceManifest;
-  } catch {
-    return null;
+/**
+ * 读取 marketplace 仓库的 marketplace.json
+ * 优先查找 .roblox-studio-hub-plugin/marketplace.json，回退到根目录 marketplace.json
+ */
+function readMarketplaceManifest(repoDir: string): ManifestResult | null {
+  const candidates = [
+    path.join(repoDir, ".roblox-studio-hub-plugin", "marketplace.json"),
+    path.join(repoDir, "marketplace.json"),
+  ];
+
+  for (const manifestPath of candidates) {
+    if (!fs.existsSync(manifestPath)) continue;
+
+    try {
+      const raw = fs.readFileSync(manifestPath, "utf-8");
+      const manifest = JSON.parse(raw) as MarketplaceManifest;
+      return { manifest, manifestDir: path.dirname(manifestPath) };
+    } catch {
+      // 解析失败，尝试下一个
+    }
   }
+
+  return null;
 }
 
 // ==================== CLI Commands ====================
@@ -111,9 +127,9 @@ export async function marketplaceAdd(ownerRepo: string): Promise<void> {
   console.log(`📥 验证 marketplace: ${ownerRepo}...`);
   try {
     const repoDir = await syncMarketplaceRepo(ownerRepo);
-    const manifest = readMarketplaceManifest(repoDir);
+    const result = readMarketplaceManifest(repoDir);
 
-    if (!manifest) {
+    if (!result) {
       console.error(`❌ 仓库 ${ownerRepo} 中未找到 marketplace.json`);
       process.exit(1);
     }
@@ -124,12 +140,10 @@ export async function marketplaceAdd(ownerRepo: string): Promise<void> {
     writeMarketplacesConfig(newConfig);
 
     console.log(`✅ Marketplace 已添加: ${ownerRepo}`);
-    console.log(`   名称: ${manifest.name}`);
-    console.log(`   插件数: ${manifest.plugins.length}`);
+    console.log(`   名称: ${result.manifest.name}`);
+    console.log(`   插件数: ${result.manifest.plugins.length}`);
   } catch (err) {
-    console.error(
-      `❌ 无法访问 marketplace: ${(err as Error).message}`,
-    );
+    console.error(`❌ 无法访问 marketplace: ${(err as Error).message}`);
     process.exit(1);
   }
 }
@@ -165,7 +179,9 @@ export function marketplaceList(): void {
     return;
   }
 
-  console.log(`\n📦 已添加的 Marketplace (${config.marketplaces.length} 个):\n`);
+  console.log(
+    `\n📦 已添加的 Marketplace (${config.marketplaces.length} 个):\n`,
+  );
   for (const m of config.marketplaces) {
     console.log(`  ${m}`);
   }
@@ -176,9 +192,7 @@ export function marketplaceList(): void {
  * 从所有已添加的 marketplace 中搜索插件
  * 按添加顺序遍历，先匹配先返回
  */
-export async function searchInMarketplaces(
-  pluginName: string,
-): Promise<{
+export async function searchInMarketplaces(pluginName: string): Promise<{
   plugin: MarketplacePlugin;
   marketplace: string;
   repoDir: string;
@@ -188,13 +202,17 @@ export async function searchInMarketplaces(
   for (const ownerRepo of config.marketplaces) {
     try {
       const repoDir = await syncMarketplaceRepo(ownerRepo);
-      const manifest = readMarketplaceManifest(repoDir);
+      const result = readMarketplaceManifest(repoDir);
 
-      if (!manifest) continue;
+      if (!result) continue;
 
-      const found = manifest.plugins.find((p) => p.name === pluginName);
+      const found = result.manifest.plugins.find((p) => p.name === pluginName);
       if (found) {
-        return { plugin: found, marketplace: ownerRepo, repoDir };
+        return {
+          plugin: found,
+          marketplace: ownerRepo,
+          repoDir: result.manifestDir,
+        };
       }
     } catch {
       console.warn(`[Marketplace] 跳过不可用的 marketplace: ${ownerRepo}`);
@@ -216,11 +234,11 @@ export async function searchAllMarketplaces(
   for (const ownerRepo of config.marketplaces) {
     try {
       const repoDir = await syncMarketplaceRepo(ownerRepo);
-      const manifest = readMarketplaceManifest(repoDir);
+      const result = readMarketplaceManifest(repoDir);
 
-      if (!manifest) continue;
+      if (!result) continue;
 
-      for (const plugin of manifest.plugins) {
+      for (const plugin of result.manifest.plugins) {
         if (
           !query ||
           plugin.name.includes(query) ||

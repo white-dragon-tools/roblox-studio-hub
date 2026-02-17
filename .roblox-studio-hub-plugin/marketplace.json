@@ -5,12 +5,17 @@
     {
       "name": "execute",
       "description": "Execute Lua code in Roblox Studio. Supports eval, run, and play modes.",
-      "source": "./execute"
+      "source": "../packages/plugins/execute"
     },
     {
       "name": "get-studio-info",
       "description": "Get current Roblox Studio environment information.",
-      "source": "./get-studio-info"
+      "source": "../packages/plugins/get-studio-info"
+    },
+    {
+      "name": "game-control",
+      "description": "Start and stop the game in Roblox Studio.",
+      "source": "../packages/plugins/game-control"
     }
   ]
 }

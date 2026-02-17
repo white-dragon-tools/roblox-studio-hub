@@ -11,6 +11,7 @@ export interface PluginManifest {
   readonly keywords?: readonly string[];
   readonly dependencies?: readonly string[];
   readonly tools?: readonly PluginToolDef[];
+  readonly web?: string;
 }
 
 /**
@@ -24,6 +25,7 @@ export interface PluginToolDef {
     readonly properties?: Readonly<Record<string, Record<string, unknown>>>;
     readonly required?: readonly string[];
   };
+  readonly web?: string;
 }
 
 /**

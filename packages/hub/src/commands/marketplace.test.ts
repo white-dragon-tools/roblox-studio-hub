@@ -108,10 +108,17 @@ describe("marketplace CLI commands", () => {
         if (typeof cmd === "string" && cmd.includes("git clone")) {
           // 创建缓存目录和 .git 标记
           fs.mkdirSync(path.join(cacheDir, ".git"), { recursive: true });
+          fs.mkdirSync(path.join(cacheDir, ".roblox-studio-hub-plugin"), {
+            recursive: true,
+          });
 
           // 创建 marketplace.json
           fs.writeFileSync(
-            path.join(cacheDir, "marketplace.json"),
+            path.join(
+              cacheDir,
+              ".roblox-studio-hub-plugin",
+              "marketplace.json",
+            ),
             JSON.stringify(
               {
                 name: "Test Marketplace",
@@ -218,8 +225,11 @@ describe("marketplace CLI commands", () => {
 
       // 预先创建缓存目录和 .git
       fs.mkdirSync(path.join(cacheDir, ".git"), { recursive: true });
+      fs.mkdirSync(path.join(cacheDir, ".roblox-studio-hub-plugin"), {
+        recursive: true,
+      });
       fs.writeFileSync(
-        path.join(cacheDir, "marketplace.json"),
+        path.join(cacheDir, ".roblox-studio-hub-plugin", "marketplace.json"),
         JSON.stringify({
           name: "Existing Marketplace",
           plugins: [],
@@ -259,8 +269,11 @@ describe("marketplace CLI commands", () => {
 
       // 预先创建缓存
       fs.mkdirSync(path.join(cacheDir, ".git"), { recursive: true });
+      fs.mkdirSync(path.join(cacheDir, ".roblox-studio-hub-plugin"), {
+        recursive: true,
+      });
       fs.writeFileSync(
-        path.join(cacheDir, "marketplace.json"),
+        path.join(cacheDir, ".roblox-studio-hub-plugin", "marketplace.json"),
         JSON.stringify({
           name: "Cached Marketplace",
           plugins: [],
@@ -909,8 +922,14 @@ describe("marketplace CLI commands", () => {
 
       mockExecSync.mockImplementation(() => {
         fs.mkdirSync(path.join(cacheDir, ".git"), { recursive: true });
+        fs.mkdirSync(path.join(cacheDir, ".roblox-studio-hub-plugin"), {
+          recursive: true,
+        });
         // 写入损坏的 marketplace.json
-        fs.writeFileSync(path.join(cacheDir, "marketplace.json"), "{invalid");
+        fs.writeFileSync(
+          path.join(cacheDir, ".roblox-studio-hub-plugin", "marketplace.json"),
+          "{invalid",
+        );
       });
 
       await expect(marketplaceAdd(ownerRepo)).rejects.toThrow(
@@ -944,8 +963,11 @@ describe("marketplace CLI commands", () => {
       mockExecSync.mockImplementation(() => {
         // git clone 会创建缓存目录
         fs.mkdirSync(path.join(cacheDir, ".git"), { recursive: true });
+        fs.mkdirSync(path.join(cacheDir, ".roblox-studio-hub-plugin"), {
+          recursive: true,
+        });
         fs.writeFileSync(
-          path.join(cacheDir, "marketplace.json"),
+          path.join(cacheDir, ".roblox-studio-hub-plugin", "marketplace.json"),
           JSON.stringify({
             name: "New Marketplace",
             plugins: [],
@@ -990,6 +1012,148 @@ describe("marketplace CLI commands", () => {
 
       const results = await searchAllMarketplaces();
       expect(results).toHaveLength(0);
+    });
+
+    it("应当优先使用 .roblox-studio-hub-plugin/ 下的 marketplace.json", async () => {
+      const cacheDir1 = path.join(
+        tmpDir,
+        ".local-hub",
+        "cache",
+        "marketplaces",
+        "marketplace1--repo",
+      );
+
+      const configPath = path.join(tmpDir, ".local-hub", "marketplaces.json");
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify({ marketplaces: ["marketplace1/repo"] }, null, 2),
+      );
+
+      // 同时创建两个 marketplace.json：新路径和旧路径
+      fs.mkdirSync(path.join(cacheDir1, ".git"), { recursive: true });
+      fs.mkdirSync(path.join(cacheDir1, ".roblox-studio-hub-plugin"), {
+        recursive: true,
+      });
+
+      // 新路径 — 包含 plugin-new
+      fs.writeFileSync(
+        path.join(cacheDir1, ".roblox-studio-hub-plugin", "marketplace.json"),
+        JSON.stringify({
+          name: "New Path Marketplace",
+          plugins: [
+            {
+              name: "plugin-new",
+              description: "From new path",
+              source: "owner/new",
+            },
+          ],
+        }),
+      );
+
+      // 旧路径 — 包含 plugin-old
+      fs.writeFileSync(
+        path.join(cacheDir1, "marketplace.json"),
+        JSON.stringify({
+          name: "Old Path Marketplace",
+          plugins: [
+            {
+              name: "plugin-old",
+              description: "From old path",
+              source: "owner/old",
+            },
+          ],
+        }),
+      );
+
+      mockExecSync.mockImplementation(() => {});
+
+      // 应该找到新路径的 plugin-new
+      const result = await searchInMarketplaces("plugin-new");
+      expect(result).not.toBeNull();
+      expect(result?.plugin.name).toBe("plugin-new");
+
+      // 不应该找到旧路径的 plugin-old（因为优先使用新路径）
+      const resultOld = await searchInMarketplaces("plugin-old");
+      expect(resultOld).toBeNull();
+    });
+
+    it("应当在 .roblox-studio-hub-plugin/ 不存在时回退到根目录 marketplace.json", async () => {
+      const cacheDir1 = path.join(
+        tmpDir,
+        ".local-hub",
+        "cache",
+        "marketplaces",
+        "marketplace1--repo",
+      );
+
+      const configPath = path.join(tmpDir, ".local-hub", "marketplaces.json");
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify({ marketplaces: ["marketplace1/repo"] }, null, 2),
+      );
+
+      // 只创建旧路径
+      fs.mkdirSync(path.join(cacheDir1, ".git"), { recursive: true });
+      fs.writeFileSync(
+        path.join(cacheDir1, "marketplace.json"),
+        JSON.stringify({
+          name: "Legacy Marketplace",
+          plugins: [
+            {
+              name: "legacy-plugin",
+              description: "From legacy path",
+              source: "owner/legacy",
+            },
+          ],
+        }),
+      );
+
+      mockExecSync.mockImplementation(() => {});
+
+      const result = await searchInMarketplaces("legacy-plugin");
+      expect(result).not.toBeNull();
+      expect(result?.plugin.name).toBe("legacy-plugin");
+    });
+
+    it("searchInMarketplaces 返回的 repoDir 应为 manifest 所在目录", async () => {
+      const cacheDir1 = path.join(
+        tmpDir,
+        ".local-hub",
+        "cache",
+        "marketplaces",
+        "marketplace1--repo",
+      );
+
+      const configPath = path.join(tmpDir, ".local-hub", "marketplaces.json");
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify({ marketplaces: ["marketplace1/repo"] }, null, 2),
+      );
+
+      fs.mkdirSync(path.join(cacheDir1, ".git"), { recursive: true });
+      fs.mkdirSync(path.join(cacheDir1, ".roblox-studio-hub-plugin"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(cacheDir1, ".roblox-studio-hub-plugin", "marketplace.json"),
+        JSON.stringify({
+          name: "Test",
+          plugins: [
+            {
+              name: "test-plugin",
+              description: "Test",
+              source: "./my-plugin",
+            },
+          ],
+        }),
+      );
+
+      mockExecSync.mockImplementation(() => {});
+
+      const result = await searchInMarketplaces("test-plugin");
+      expect(result).not.toBeNull();
+      // repoDir 应指向 .roblox-studio-hub-plugin/ 目录
+      expect(result?.repoDir).toContain(".roblox-studio-hub-plugin");
     });
   });
 });

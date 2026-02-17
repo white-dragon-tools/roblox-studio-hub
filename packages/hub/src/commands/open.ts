@@ -1,6 +1,8 @@
 import path from "path";
 import fs from "fs";
 import { injectRuntime } from "../utils/injectRuntime.js";
+import { loadHubConfig, checkDependencies } from "../hub/hubConfig.js";
+import { getPluginsDir } from "../hub/hubPaths.js";
 
 export interface OpenOptions {
   readonly placeArg: string;
@@ -89,6 +91,30 @@ export async function openStudio(opts: OpenOptions): Promise<void> {
     if (!fs.existsSync(dir)) {
       console.error(`❌ 插件目录不存在: ${dir}`);
       process.exit(1);
+    }
+  }
+
+  // 检查项目级 hub.json 配置
+  const hubConfig = loadHubConfig(path.dirname(placePath));
+  if (hubConfig) {
+    console.log(
+      `📋 项目配置: ${path.join(hubConfig.projectRoot, ".roblox-studio-hub", "hub.json")}`,
+    );
+
+    if (hubConfig.plugins.dependencies.length > 0) {
+      const pluginsDir = getPluginsDir();
+      const { missing } = checkDependencies(
+        hubConfig.plugins.dependencies,
+        pluginsDir,
+      );
+
+      if (missing.length > 0) {
+        console.warn(`⚠️  以下插件未安装:`);
+        for (const name of missing) {
+          console.warn(`   - ${name}`);
+        }
+        console.warn(`   使用 hub plugin install <name> 安装`);
+      }
     }
   }
 

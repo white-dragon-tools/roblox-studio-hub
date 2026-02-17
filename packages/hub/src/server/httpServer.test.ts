@@ -6,6 +6,16 @@ import { SubscriptionManager } from "../hub/subscriptionManager.js";
 import type { StudioInfo } from "../types.js";
 import type express from "express";
 
+// Mock hubMethods: isHubMethod 使用真实实现, executeHubMethod 可被 mock
+const mockExecuteHubMethod = vi.hoisted(() => vi.fn());
+vi.mock("../hub/hubMethods.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../hub/hubMethods.js")>();
+  return {
+    ...actual,
+    executeHubMethod: mockExecuteHubMethod,
+  };
+});
+
 // 用于测试的 studioInfo 工厂
 function makeStudioInfo(overrides?: Partial<StudioInfo>): StudioInfo {
   return {
@@ -395,6 +405,87 @@ describe("httpServer", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("context");
+    });
+  });
+
+  // ==================== Hub-side 方法 (startGame/stopGame) ====================
+
+  describe("Hub-side 方法拦截", () => {
+    beforeEach(async () => {
+      // 注册一个 Studio (edit 状态)
+      await request(app)
+        .post("/api/studio/poll")
+        .send({ studioInfo: makeStudioInfo() });
+      mockExecuteHubMethod.mockReset();
+    });
+
+    it("startGame 在 edit 状态应成功调用", async () => {
+      mockExecuteHubMethod.mockResolvedValue({
+        success: true,
+        result: "Game started",
+      });
+
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/call")
+        .send({ method: "startGame" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.result).toBe("Game started");
+      expect(mockExecuteHubMethod).toHaveBeenCalledWith(
+        "startGame",
+        {},
+        expect.objectContaining({ placeName: "TestPlace" }),
+      );
+    });
+
+    it("startGame 在 play 状态应返回 400", async () => {
+      studioManager.updateGameState("local:TestPlace", "play");
+
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/call")
+        .send({ method: "startGame" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("context");
+      expect(mockExecuteHubMethod).not.toHaveBeenCalled();
+    });
+
+    it("stopGame 在 play 状态应成功调用", async () => {
+      studioManager.updateGameState("local:TestPlace", "play");
+      mockExecuteHubMethod.mockResolvedValue({
+        success: true,
+        result: "Game stopped",
+      });
+
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/call")
+        .send({ method: "stopGame" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.result).toBe("Game stopped");
+    });
+
+    it("stopGame 在 edit 状态应返回 400", async () => {
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/call")
+        .send({ method: "stopGame" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("context");
+      expect(mockExecuteHubMethod).not.toHaveBeenCalled();
+    });
+
+    it("Hub 方法执行异常应返回 500", async () => {
+      mockExecuteHubMethod.mockRejectedValue(new Error("rspo crash"));
+
+      const res = await request(app)
+        .post("/api/studios/local:TestPlace/call")
+        .send({ method: "startGame" });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toContain("rspo crash");
     });
   });
 
