@@ -415,6 +415,13 @@ export function createApp(options: AppOptions): {
           (params ?? {}) as Record<string, unknown>,
           studio,
         );
+
+        // 成功后更新 gameState
+        if (result.success) {
+          const newState = method === "startGame" ? "play" : "edit";
+          studioManager.updateGameState(studio.id, newState);
+        }
+
         res.json(result);
       } catch (e) {
         res.status(500).json({ error: (e as Error).message });
